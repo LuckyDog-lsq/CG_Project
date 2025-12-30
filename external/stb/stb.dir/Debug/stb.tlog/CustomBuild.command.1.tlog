@@ -1,0 +1,10 @@
+^G:\GRAPHICWORK\FINAL_PROJECT\EXTERNAL\STB\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SG:/GraphicWork/final_project -BG:/GraphicWork/final_project --check-stamp-file G:/GraphicWork/final_project/external/stb/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

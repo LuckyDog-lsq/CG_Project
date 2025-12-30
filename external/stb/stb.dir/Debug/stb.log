@@ -1,0 +1,4 @@
+﻿  Building Custom Rule G:/GraphicWork/final_project/external/stb/CMakeLists.txt
+  stb_image.cpp
+  stb_vorbis.c
+  stb.vcxproj -> G:\GraphicWork\final_project\external\stb\Debug\stb.lib
