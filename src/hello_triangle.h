@@ -1,13 +1,12 @@
 #pragma once
 
 #include "base/application.h"
+#include "base/camera.h"
 #include "base/glsl_program.h"
+#include "base/transform.h"
+#include "model.h"
 #include <memory>
-
-struct Vertex {
-    glm::vec3 position;
-    glm::vec3 color;
-};
+#include <vector>
 
 class HelloTriangle : public Application {
 public:
@@ -16,17 +15,15 @@ public:
     ~HelloTriangle();
 
 private:
-    GLuint _vao = 0;
-
-    GLuint _vbo = 0;
-
-    Vertex _vertices[3] = {
-        {glm::vec3(-0.5f, -0.5f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f)},
-        { glm::vec3(0.5f, -0.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)},
-        { glm::vec3(0.0f,  0.5f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)}
+    struct SceneModel {
+        Model model;
+        Transform transform;
+        glm::vec3 fallbackColor = glm::vec3(0.8f);
     };
 
+    PerspectiveCamera _camera;
     std::unique_ptr<GLSLProgram> _shader;
+    std::vector<SceneModel> _sceneModels;
 
     virtual void handleInput();
 
