@@ -6,42 +6,58 @@
 #include <vector>
 
 void MazeApp::updateCamera(float deltaTime) {
-   
-   // 1获取鼠标当前位置
+    // 1️⃣ 获取鼠标当前位置
     double xpos, ypos;
     glfwGetCursorPos(_window, &xpos, &ypos);
 
-    // 2计算偏移量（以窗口中心为基准）
+    // 2️⃣ 计算偏移量
     float deltaX = static_cast<float>(xpos - _windowWidth / 2);
-    float deltaY = static_cast<float>(_windowHeight / 2 - ypos); // 注意Y轴方向翻转
+    float deltaY = static_cast<float>(_windowHeight / 2 - ypos); // 注意 Y 方向
 
-    // 3旋转相机
-    _camera.rotate(-deltaX * _mouseSensitivity, deltaY * _mouseSensitivity);
+    // 3️⃣ 应用灵敏度
+    deltaX *= _mouseSensitivity;
+    deltaY *= _mouseSensitivity;
 
-    // 4每帧把光标重置到窗口中心
+    // 4️⃣ 更新 yaw / pitch
+    _yaw += -deltaX;      // 左右方向修正，鼠标向右看世界右转
+    _pitch += deltaY;
+
+    // 5️⃣ 限制 pitch 范围 [-89, 89]
+    if (_pitch > 89.0f) _pitch = 89.0f;
+    if (_pitch < -89.0f) _pitch = -89.0f;
+
+    // 6️⃣ 根据 yaw / pitch 计算前向向量
+    glm::vec3 front;
+    front.x = cos(glm::radians(_yaw)) * cos(glm::radians(_pitch));
+    front.y = sin(glm::radians(_pitch));
+    front.z = sin(glm::radians(_yaw)) * cos(glm::radians(_pitch));
+    front = glm::normalize(front);
+
+    // 7️⃣ 更新 Camera 四元数旋转
+    _camera.transform.rotation = glm::quatLookAt(front, Transform::getDefaultUp());
+
+    // 8️⃣ 锁定光标回窗口中心
     glfwSetCursorPos(_window, _windowWidth / 2, _windowHeight / 2);
 
-
-    // 2️⃣ 键盘移动
+    // 9️⃣ 处理键盘平移
     glm::vec3 dir(0.0f);
-    if (_input.keyboard.keyStates[GLFW_KEY_W] == GLFW_PRESS)
-        dir += _camera.transform.getFront();
-    if (_input.keyboard.keyStates[GLFW_KEY_S] == GLFW_PRESS)
-        dir -= _camera.transform.getFront();
-    if (_input.keyboard.keyStates[GLFW_KEY_A] == GLFW_PRESS)
-        dir -= _camera.transform.getRight();
-    if (_input.keyboard.keyStates[GLFW_KEY_D] == GLFW_PRESS)
-        dir += _camera.transform.getRight();
-    if (_input.keyboard.keyStates[GLFW_KEY_Q] == GLFW_PRESS)
-        dir += Transform::getDefaultUp();
-    if (_input.keyboard.keyStates[GLFW_KEY_E] == GLFW_PRESS)
-        dir -= Transform::getDefaultUp();
+    // 计算水平平移方向，只取前向的 x/z 分量
+    glm::vec3 horizontalFront = _camera.transform.getFront();
+    horizontalFront.y = 0.0f;
+    horizontalFront = glm::normalize(horizontalFront);
 
-    if (glm::length(dir) > 0.0f)
-        dir = glm::normalize(dir);
+    if (_input.keyboard.keyStates[GLFW_KEY_W] == GLFW_PRESS) dir += horizontalFront;
+    if (_input.keyboard.keyStates[GLFW_KEY_S] == GLFW_PRESS) dir -= horizontalFront;
+    if (_input.keyboard.keyStates[GLFW_KEY_A] == GLFW_PRESS) dir -= _camera.transform.getRight();
+    if (_input.keyboard.keyStates[GLFW_KEY_D] == GLFW_PRESS) dir += _camera.transform.getRight();
+    if (_input.keyboard.keyStates[GLFW_KEY_Q] == GLFW_PRESS) dir += Transform::getDefaultUp();
+    if (_input.keyboard.keyStates[GLFW_KEY_E] == GLFW_PRESS) dir -= Transform::getDefaultUp();
+
+    if (glm::length(dir) > 0.0f) dir = glm::normalize(dir);
 
     _camera.move(dir * _moveSpeed * deltaTime);
 }
+
 
 
 MazeApp::MazeApp(const Options& options)
@@ -51,7 +67,7 @@ MazeApp::MazeApp(const Options& options)
     // 在 MazeApp 构造函数里 glEnable(GL_DEPTH_TEST); 下面加
     glfwSetInputMode(_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    _camera.transform.position = glm::vec3(0.0f, 4.0f, 10.5f);
+    _camera.transform.position = glm::vec3(0.0f, -1.7f, 10.5f);
     _camera.transform.lookAt(glm::vec3(0.0f, 0.0f, 0.0f));
 
     const char* vsCode =

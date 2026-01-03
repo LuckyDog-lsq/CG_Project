@@ -26,7 +26,10 @@ private:
     std::unique_ptr<GLSLProgram> _shader;
     std::vector<SceneModel> _sceneModels;
 
-    float _moveSpeed = 5.0f;
+
+    float _yaw = -90.0f;   // 水平方向角度，初始朝 -Z
+    float _pitch = 0.0f;   // 垂直方向角度
+    float _moveSpeed = 2.0f;
     float _mouseSensitivity = 0.02f;
 
     virtual void handleInput();
