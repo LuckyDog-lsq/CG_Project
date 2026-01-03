@@ -16,10 +16,23 @@ public:
     ~MazeApp();
 
 private:
+    struct AABB {
+        glm::vec3 min;
+        glm::vec3 max;
+
+        // ¼òµ¥Çò-ºÐÅö×²¼ì²â
+        bool intersects(const glm::vec3& point, float radius) const {
+            glm::vec3 clamped = glm::clamp(point, min, max);
+            return glm::length(clamped - point) < radius;
+        }
+    };
+
     struct SceneModel {
         std::shared_ptr<Model> model;
         Transform transform;
         glm::vec3 fallbackColor = glm::vec3(0.8f);
+        AABB aabb;
+        bool isWall = false;
     };
 
     PerspectiveCamera _camera;

@@ -55,7 +55,22 @@ void MazeApp::updateCamera(float deltaTime) {
 
     if (glm::length(dir) > 0.0f) dir = glm::normalize(dir);
 
+    glm::vec3 proposedPos = _camera.transform.position + dir * _moveSpeed * deltaTime;
+    float playerRadius = 0.2f; // 玩家碰撞半径，可调
+
+    // 遍历所有墙壁 AABB
+    for (const auto& sm : _sceneModels) {
+        if (sm.isWall) {
+            if (sm.aabb.intersects(proposedPos, playerRadius)) {
+                dir = glm::vec3(0.0f); // 碰撞 → 阻止移动
+                break;
+            }
+        }
+    }
+
+    // 最终移动
     _camera.move(dir * _moveSpeed * deltaTime);
+
 }
 
 
@@ -166,10 +181,18 @@ MazeApp::MazeApp(const Options& options)
                     SceneModel sm;
                     sm.model = snowModel;
                     sm.transform.position = pos;
-                    sm.transform.scale = glm::vec3(1.8f);  // 放大到 1.8 倍，消除缝隙
+                    sm.transform.scale = glm::vec3(1.8f);  // 放大到 1.8
                     sm.fallbackColor = glm::vec3(0.8f);
+                    sm.isWall = true;
+
+                    //初始化 AABB
+                    glm::vec3 halfScale = sm.transform.scale * 0.5f;
+                    sm.aabb.min = sm.transform.position - halfScale;
+                    sm.aabb.max = sm.transform.position + halfScale;
+
                     _sceneModels.push_back(std::move(sm));
                 }
+
             }
         }
 
