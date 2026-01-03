@@ -7,198 +7,233 @@
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
+#include <iostream>
 
 namespace {
 
-struct FaceVertex {
-    int positionIndex = -1;
-    int texcoordIndex = -1;
-    int normalIndex = -1;
-};
+    struct FaceVertex {
+        int positionIndex = -1;
+        int texcoordIndex = -1;
+        int normalIndex = -1;
+    };
 
-struct MaterialData {
-    glm::vec3 diffuseColor = glm::vec3(0.8f);
-    std::string diffuseTexture;
-};
+    struct MaterialData {
+        glm::vec3 diffuseColor = glm::vec3(0.8f);
+        std::string diffuseTexture;
+    };
 
-struct FaceGroup {
-    std::string materialName;
-    std::vector<FaceVertex> vertices;
-};
+    struct FaceGroup {
+        std::string materialName;
+        std::vector<FaceVertex> vertices;
+    };
 
-struct ParsedObj {
-    std::vector<glm::vec3> positions;
-    std::vector<glm::vec3> normals;
-    std::vector<glm::vec2> texcoords;
-    std::vector<FaceGroup> groups;
-    std::unordered_map<std::string, MaterialData> materials;
-};
+    struct ParsedObj {
+        std::vector<glm::vec3> positions;
+        std::vector<glm::vec3> normals;
+        std::vector<glm::vec2> texcoords;
+        std::vector<FaceGroup> groups;
+        std::unordered_map<std::string, MaterialData> materials;
+    };
 
-glm::vec3 parseVec3(std::istringstream& iss) {
-    float x = 0.0f, y = 0.0f, z = 0.0f;
-    iss >> x >> y >> z;
-    return {x, y, z};
-}
-
-glm::vec2 parseVec2(std::istringstream& iss) {
-    float x = 0.0f, y = 0.0f;
-    iss >> x >> y;
-    return {x, y};
-}
-
-std::string trim(const std::string& s) {
-    const auto begin = s.find_first_not_of(" \t\r\n");
-    if (begin == std::string::npos) {
-        return "";
-    }
-    const auto end = s.find_last_not_of(" \t\r\n");
-    return s.substr(begin, end - begin + 1);
-}
-
-std::vector<std::string> tokenize(const std::string& line) {
-    std::istringstream iss(line);
-    std::vector<std::string> tokens;
-    std::string token;
-    while (iss >> token) {
-        tokens.push_back(token);
-    }
-    return tokens;
-}
-
-void loadMtlFile(
-    const std::string& mtlPath, std::unordered_map<std::string, MaterialData>& materials) {
-    std::ifstream file(mtlPath);
-    if (!file.is_open()) {
-        // MTL file is optional - just return without error
-        std::cerr << "Warning: Could not open MTL file: " << mtlPath << " (using default materials)" << std::endl;
-        return;
+    glm::vec3 parseVec3(std::istringstream& iss) {
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        iss >> x >> y >> z;
+        return { x, y, z };
     }
 
-    std::string line;
-    std::string currentName;
-    MaterialData currentMaterial;
+    glm::vec2 parseVec2(std::istringstream& iss) {
+        float x = 0.0f, y = 0.0f;
+        iss >> x >> y;
+        return { x, y };
+    }
 
-    auto commitMaterial = [&]() {
-        if (!currentName.empty()) {
-            materials[currentName] = currentMaterial;
+    std::string trim(const std::string& s) {
+        const auto begin = s.find_first_not_of(" \t\r\n");
+        if (begin == std::string::npos) {
+            return "";
         }
-        };
+        const auto end = s.find_last_not_of(" \t\r\n");
+        return s.substr(begin, end - begin + 1);
+    }
 
-    while (std::getline(file, line)) {
-        line = trim(line);
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
-
+    std::vector<std::string> tokenize(const std::string& line) {
         std::istringstream iss(line);
-        std::string key;
-        iss >> key;
-
-        if (key == "newmtl") {
-            commitMaterial();
-            iss >> currentName;
-            currentMaterial = MaterialData{};
+        std::vector<std::string> tokens;
+        std::string token;
+        while (iss >> token) {
+            tokens.push_back(token);
         }
-        else if (key == "Kd") {
-            currentMaterial.diffuseColor = parseVec3(iss);
-        }
-        else if (key == "map_Kd") {
-            iss >> currentMaterial.diffuseTexture;
-        }
+        return tokens;
     }
 
-    commitMaterial();
-}
-
-FaceVertex parseFaceToken(const std::string& token) {
-    FaceVertex fv{};
-    std::istringstream ss(token);
-    std::string element;
-    int idx = 0;
-    while (std::getline(ss, element, '/')) {
-        if (element.empty()) {
-            ++idx;
-            continue;
-        }
-        int value = std::stoi(element);
-        int fixedIndex = (value < 0) ? value : value - 1;
-        switch (idx) {
-        case 0: fv.positionIndex = fixedIndex; break;
-        case 1: fv.texcoordIndex = fixedIndex; break;
-        case 2: fv.normalIndex = fixedIndex; break;
-        default: break;
-        }
-        ++idx;
-    }
-    return fv;
-}
-
-ParsedObj parseObjFile(const std::string& path, bool loadMtl) {
-    ParsedObj result;
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        throw std::runtime_error("failed to open obj file: " + path);
+    // 检查文件是否存在
+    bool fileExists(const std::string& path) {
+        std::ifstream f(path);
+        return f.good();
     }
 
-    const auto lastSlash = path.find_last_of("/\\");
-    const std::string directory = (lastSlash == std::string::npos) ? "" : path.substr(0, lastSlash + 1);
+    // 从完整路径中提取基础名称（去除扩展名）
+    std::string getBaseName(const std::string& path) {
+        auto lastSlash = path.find_last_of("/\\");
+        auto lastDot = path.find_last_of('.');
 
-    std::string line;
-    std::string currentMaterial;
-    while (std::getline(file, line)) {
-        line = trim(line);
-        if (line.empty() || line[0] == '#') {
-            continue;
+        size_t start = (lastSlash == std::string::npos) ? 0 : lastSlash + 1;
+        size_t end = (lastDot == std::string::npos || lastDot < start) ? path.length() : lastDot;
+
+        return path.substr(start, end - start);
+    }
+
+    void loadMtlFile(
+        const std::string& mtlPath, std::unordered_map<std::string, MaterialData>& materials) {
+        std::ifstream file(mtlPath);
+        if (!file.is_open()) {
+            std::cerr << "Warning: Could not open MTL file: " << mtlPath << std::endl;
+            return;
         }
 
-        std::istringstream iss(line);
-        std::string key;
-        iss >> key;
+        std::cout << "Loading MTL file: " << mtlPath << std::endl;
 
-        if (key == "v") {
-            result.positions.push_back(parseVec3(iss));
-        } else if (key == "vt") {
-            result.texcoords.push_back(parseVec2(iss));
-        } else if (key == "vn") {
-            result.normals.push_back(parseVec3(iss));
-        } else if (key == "f") {
-            std::vector<std::string> tokens = tokenize(line);
-            if (tokens.size() < 4) {
+        std::string line;
+        std::string currentName;
+        MaterialData currentMaterial;
+
+        auto commitMaterial = [&]() {
+            if (!currentName.empty()) {
+                materials[currentName] = currentMaterial;
+                std::cout << "  Material '" << currentName << "': ";
+                std::cout << "Kd(" << currentMaterial.diffuseColor.r << ", "
+                    << currentMaterial.diffuseColor.g << ", "
+                    << currentMaterial.diffuseColor.b << ")";
+                if (!currentMaterial.diffuseTexture.empty()) {
+                    std::cout << ", Texture: '" << currentMaterial.diffuseTexture << "'";
+                }
+                std::cout << std::endl;
+            }
+            };
+
+        while (std::getline(file, line)) {
+            line = trim(line);
+            if (line.empty() || line[0] == '#') {
                 continue;
             }
 
-            // tokens[0] == "f"
-            std::vector<FaceVertex> faceVertices;
-            for (size_t i = 1; i < tokens.size(); ++i) {
-                faceVertices.push_back(parseFaceToken(tokens[i]));
-            }
+            std::istringstream iss(line);
+            std::string key;
+            iss >> key;
 
-            // fan triangulation
-            for (size_t i = 1; i + 1 < faceVertices.size(); ++i) {
-                FaceGroup group;
-                group.materialName = currentMaterial;
-                group.vertices.push_back(faceVertices[0]);
-                group.vertices.push_back(faceVertices[i]);
-                group.vertices.push_back(faceVertices[i + 1]);
-                result.groups.push_back(std::move(group));
+            if (key == "newmtl") {
+                commitMaterial();
+                iss >> currentName;
+                currentMaterial = MaterialData{};
             }
-        } else if (key == "usemtl") {
-            iss >> currentMaterial;
-        } else if (key == "mtllib" && loadMtl) {
-            std::string mtlFile;
-            iss >> mtlFile;
-            loadMtlFile(directory + mtlFile, result.materials);
+            else if (key == "Kd") {
+                currentMaterial.diffuseColor = parseVec3(iss);
+            }
+            else if (key == "map_Kd") {
+                std::string texPath;
+                std::getline(iss, texPath);
+                texPath = trim(texPath);
+                // 将反斜杠转换为正斜杠
+                std::replace(texPath.begin(), texPath.end(), '\\', '/');
+                currentMaterial.diffuseTexture = texPath;
+            }
         }
+
+        commitMaterial();
     }
 
-    return result;
-}
-
-struct Hasher {
-    size_t operator()(const Vertex& v) const {
-        return std::hash<Vertex>{}(v);
+    FaceVertex parseFaceToken(const std::string& token) {
+        FaceVertex fv{};
+        std::istringstream ss(token);
+        std::string element;
+        int idx = 0;
+        while (std::getline(ss, element, '/')) {
+            if (element.empty()) {
+                ++idx;
+                continue;
+            }
+            int value = std::stoi(element);
+            int fixedIndex = (value < 0) ? value : value - 1;
+            switch (idx) {
+            case 0: fv.positionIndex = fixedIndex; break;
+            case 1: fv.texcoordIndex = fixedIndex; break;
+            case 2: fv.normalIndex = fixedIndex; break;
+            default: break;
+            }
+            ++idx;
+        }
+        return fv;
     }
-};
+
+    ParsedObj parseObjFile(const std::string& path, bool loadMtl) {
+        ParsedObj result;
+        std::ifstream file(path);
+        if (!file.is_open()) {
+            throw std::runtime_error("failed to open obj file: " + path);
+        }
+
+        const auto lastSlash = path.find_last_of("/\\");
+        const std::string directory = (lastSlash == std::string::npos) ? "" : path.substr(0, lastSlash + 1);
+
+        std::string line;
+        std::string currentMaterial;
+        while (std::getline(file, line)) {
+            line = trim(line);
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
+
+            std::istringstream iss(line);
+            std::string key;
+            iss >> key;
+
+            if (key == "v") {
+                result.positions.push_back(parseVec3(iss));
+            }
+            else if (key == "vt") {
+                result.texcoords.push_back(parseVec2(iss));
+            }
+            else if (key == "vn") {
+                result.normals.push_back(parseVec3(iss));
+            }
+            else if (key == "f") {
+                std::vector<std::string> tokens = tokenize(line);
+                if (tokens.size() < 4) {
+                    continue;
+                }
+
+                std::vector<FaceVertex> faceVertices;
+                for (size_t i = 1; i < tokens.size(); ++i) {
+                    faceVertices.push_back(parseFaceToken(tokens[i]));
+                }
+
+                for (size_t i = 1; i + 1 < faceVertices.size(); ++i) {
+                    FaceGroup group;
+                    group.materialName = currentMaterial;
+                    group.vertices.push_back(faceVertices[0]);
+                    group.vertices.push_back(faceVertices[i]);
+                    group.vertices.push_back(faceVertices[i + 1]);
+                    result.groups.push_back(std::move(group));
+                }
+            }
+            else if (key == "usemtl") {
+                iss >> currentMaterial;
+            }
+            else if (key == "mtllib" && loadMtl) {
+                std::string mtlFile;
+                iss >> mtlFile;
+                loadMtlFile(directory + mtlFile, result.materials);
+            }
+        }
+
+        return result;
+    }
+
+    struct Hasher {
+        size_t operator()(const Vertex& v) const {
+            return std::hash<Vertex>{}(v);
+        }
+    };
 
 } // namespace
 
@@ -249,7 +284,7 @@ Model loadModelFromFile(const std::string& path, bool loadMtl) {
         throw std::runtime_error("no faces found in obj: " + path);
     }
 
-    glm::vec3 minV( std::numeric_limits<float>::max());
+    glm::vec3 minV(std::numeric_limits<float>::max());
     glm::vec3 maxV(-std::numeric_limits<float>::max());
 
     for (const auto& group : parsed.groups) {
@@ -269,7 +304,7 @@ Model loadModelFromFile(const std::string& path, bool loadMtl) {
 
     const glm::vec3 center = 0.5f * (minV + maxV);
     const glm::vec3 extent = maxV - minV;
-    const float maxExtent = std::max({extent.x, extent.y, extent.z, 1e-4f});
+    const float maxExtent = std::max({ extent.x, extent.y, extent.z, 1e-4f });
 
     std::unordered_map<std::string, std::vector<FaceVertex>> groupedFaces;
     for (const auto& group : parsed.groups) {
@@ -282,6 +317,10 @@ Model loadModelFromFile(const std::string& path, bool loadMtl) {
 
     const auto lastSlash = path.find_last_of("/\\");
     const std::string directory = (lastSlash == std::string::npos) ? "" : path.substr(0, lastSlash + 1);
+
+    // 获取 OBJ 文件的基础名称（不含扩展名）
+    const std::string baseName = getBaseName(path);
+    std::cout << "Loading model: " << baseName << std::endl;
 
     for (const auto& groupPair : groupedFaces) {
         const std::string& materialName = groupPair.first;
@@ -300,6 +339,9 @@ Model loadModelFromFile(const std::string& path, bool loadMtl) {
             if (it != parsed.materials.end()) {
                 material = it->second;
             }
+            else {
+                std::cout << "Warning: Material '" << materialName << "' not found in MTL file" << std::endl;
+            }
         }
 
         for (const auto& fv : faceVertices) {
@@ -308,7 +350,7 @@ Model loadModelFromFile(const std::string& path, bool loadMtl) {
                     return idx;
                 }
                 return static_cast<int>(size) + idx;
-            };
+                };
             Vertex vertex{};
             const int posIndex = resolveIndex(fv.positionIndex, parsed.positions.size());
             if (posIndex >= 0 && posIndex < static_cast<int>(parsed.positions.size())) {
@@ -329,7 +371,8 @@ Model loadModelFromFile(const std::string& path, bool loadMtl) {
                 uniqueVertices[vertex] = index;
                 vertices.push_back(vertex);
                 indices.push_back(index);
-            } else {
+            }
+            else {
                 indices.push_back(it->second);
             }
         }
@@ -337,18 +380,50 @@ Model loadModelFromFile(const std::string& path, bool loadMtl) {
         Mesh mesh{};
         mesh.baseColor = material.diffuseColor;
 
-        if (loadMtl && !material.diffuseTexture.empty()) {
-            const std::string fullPath = directory + material.diffuseTexture;
-            auto cacheIt = textureCache.find(fullPath);
-            if (cacheIt != textureCache.end()) {
-                mesh.diffuseTexture = cacheIt->second;
-            } else {
-                try {
-                    auto texture = std::make_shared<ImageTexture2D>(fullPath);
-                    textureCache[fullPath] = texture;
-                    mesh.diffuseTexture = texture;
-                } catch (const std::exception&) {
-                    mesh.diffuseTexture = nullptr;
+        // 纹理加载逻辑
+        if (loadMtl) {
+            std::string texturePath;
+
+            // 策略1：如果 MTL 文件中指定了纹理，优先使用
+            if (!material.diffuseTexture.empty()) {
+                texturePath = directory + material.diffuseTexture;
+                std::cout << "Trying texture from MTL: '" << texturePath << "'" << std::endl;
+            }
+            // 策略2：尝试查找与 OBJ 同名的纹理文件（支持多种扩展名）
+            else {
+                const std::vector<std::string> extensions = { ".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG" };
+                for (const auto& ext : extensions) {
+                    std::string candidatePath = directory + baseName + ext;
+                    if (fileExists(candidatePath)) {
+                        texturePath = candidatePath;
+                        std::cout << "Found auto-detected texture: '" << texturePath << "'" << std::endl;
+                        break;
+                    }
+                }
+
+                if (texturePath.empty()) {
+                    std::cout << "No texture found for material '" << materialName << "'" << std::endl;
+                }
+            }
+
+            // 加载纹理
+            if (!texturePath.empty()) {
+                auto cacheIt = textureCache.find(texturePath);
+                if (cacheIt != textureCache.end()) {
+                    mesh.diffuseTexture = cacheIt->second;
+                    std::cout << "  -> Using cached texture" << std::endl;
+                }
+                else {
+                    try {
+                        auto texture = std::make_shared<ImageTexture2D>(texturePath);
+                        textureCache[texturePath] = texture;
+                        mesh.diffuseTexture = texture;
+                        std::cout << "  -> Texture loaded successfully!" << std::endl;
+                    }
+                    catch (const std::exception& e) {
+                        std::cerr << "  -> ERROR: Failed to load texture: " << e.what() << std::endl;
+                        mesh.diffuseTexture = nullptr;
+                    }
                 }
             }
         }
