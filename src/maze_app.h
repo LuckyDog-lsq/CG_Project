@@ -8,15 +8,16 @@
 #include <memory>
 #include <vector>
 
-class HelloTriangle : public Application {
+// High-level app that builds a snow-box maze and places Judy/Nike/Monster models.
+class MazeApp : public Application {
 public:
-    HelloTriangle(const Options& options);
+    MazeApp(const Options& options);
 
-    ~HelloTriangle();
+    ~MazeApp();
 
 private:
     struct SceneModel {
-        Model model;
+        std::shared_ptr<Model> model;
         Transform transform;
         glm::vec3 fallbackColor = glm::vec3(0.8f);
     };

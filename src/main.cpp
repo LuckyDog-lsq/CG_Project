@@ -1,4 +1,4 @@
-#include "hello_triangle.h"
+#include "maze_app.h"
 #include <iostream>
 
 Options getOptions(int argc, char* argv[]) {
@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
     Options options = getOptions(argc, argv);
 
     try {
-        HelloTriangle app(options);
+        MazeApp app(options);
         app.run();
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;

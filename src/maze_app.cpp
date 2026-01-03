@@ -1,14 +1,16 @@
-#include "hello_triangle.h"
+#include "maze_app.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
+#include <string>
+#include <vector>
 
-HelloTriangle::HelloTriangle(const Options& options)
+MazeApp::MazeApp(const Options& options)
     : Application(options), _camera(glm::radians(60.0f), static_cast<float>(options.windowWidth) / options.windowHeight, 0.1f, 100.0f) {
     glEnable(GL_DEPTH_TEST);
 
-    _camera.transform.position = glm::vec3(0.0f, 1.5f, 6.0f);
-    _camera.transform.lookAt(glm::vec3(0.0f, 0.5f, 0.0f));
+    _camera.transform.position = glm::vec3(0.0f, 4.0f, 10.5f);
+    _camera.transform.lookAt(glm::vec3(0.0f, 0.0f, 0.0f));
 
     const char* vsCode =
         "#version 330 core\n"
@@ -59,39 +61,98 @@ HelloTriangle::HelloTriangle(const Options& options)
     _shader->link();
 
     try {
-        SceneModel monster;
-        monster.model = loadModelFromFile(getAssetFullPath("obj/Monster.obj"), false);
-        monster.transform.position = glm::vec3(-3.0f, 0.0f, 0.0f);
-        monster.fallbackColor = glm::vec3(0.8f, 0.7f, 0.6f);
+        const auto monsterModel = std::make_shared<Model>(
+            loadModelFromFile(getAssetFullPath("obj/Monster.obj"), false));
+        const auto judyModel = std::make_shared<Model>(
+            loadModelFromFile(getAssetFullPath("obj/judy_3d.obj"), true));
+        const auto nikeModel = std::make_shared<Model>(
+            loadModelFromFile(getAssetFullPath("obj/nike.obj"), true));
+        const auto snowModel = std::make_shared<Model>(
+            loadModelFromFile(getAssetFullPath("obj/snow_box.obj"), true));
 
-        SceneModel judy;
-        judy.model = loadModelFromFile(getAssetFullPath("obj/judy_3d.obj"), true);
-        judy.transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
-        judy.fallbackColor = glm::vec3(0.7f, 0.7f, 0.9f);
+        auto addInstance = [&](const std::shared_ptr<Model>& model, const glm::vec3& pos, const glm::vec3& color) {
+            SceneModel sm;
+            sm.model = model;
+            sm.transform.position = pos;
+            sm.fallbackColor = color;
+            _sceneModels.push_back(std::move(sm));
+        };
 
-        SceneModel nike;
-        nike.model = loadModelFromFile(getAssetFullPath("obj/nike.obj"), true);
-        nike.transform.position = glm::vec3(3.0f, 0.0f, 0.0f);
-        nike.fallbackColor = glm::vec3(0.9f, 0.9f, 0.9f);
+        const float cellSize = 1.5f;
+        const float wallY = -2.0f;
+        const std::vector<std::string> maze = {
+            "###############",
+            "#S   #     #  #",
+            "# ## ### # ## #",
+            "#    #   #    #",
+            "### #### ## ###",
+            "#   #    #   ##",
+            "## ### #### # #",
+            "#   #     #   #",
+            "#   #######   #",
+            "#   #     #   #",
+            "############E##",
+        };
 
-        SceneModel snow;
-        snow.model = loadModelFromFile(getAssetFullPath("obj/snow_box.obj"), true);
-        snow.transform.position = glm::vec3(0.0f, -2.0f, -2.5f);
-        snow.fallbackColor = glm::vec3(0.8f);
+        const int rows = static_cast<int>(maze.size());
+        const int cols = static_cast<int>(maze[0].size());
+        const float startX = -0.5f * cellSize * static_cast<float>(cols - 1);
+        const float startZ = -0.5f * cellSize * static_cast<float>(rows - 1);
 
-        _sceneModels.push_back(std::move(monster));
-        _sceneModels.push_back(std::move(judy));
-        _sceneModels.push_back(std::move(nike));
-        _sceneModels.push_back(std::move(snow));
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c) {
+                if (maze[r][c] == '#') {
+                    const glm::vec3 pos = glm::vec3(
+                        startX + static_cast<float>(c) * cellSize, wallY,
+                        startZ + static_cast<float>(r) * cellSize);
+                    addInstance(snowModel, pos, glm::vec3(0.8f));
+                }
+            }
+        }
+
+        const auto cellToWorld = [&](int c, int r, float y) -> glm::vec3 {
+            return glm::vec3(
+                startX + static_cast<float>(c) * cellSize,
+                y,
+                startZ + static_cast<float>(r) * cellSize);
+        };
+
+        // Judy at start (near 'S')
+        {
+            SceneModel judy;
+            judy.model = judyModel;
+            judy.transform.position = cellToWorld(1, 1, 0.0f);
+            judy.transform.lookAt(cellToWorld(3, 3, 0.0f));
+            judy.fallbackColor = glm::vec3(0.7f, 0.7f, 0.9f);
+            _sceneModels.push_back(std::move(judy));
+        }
+
+        // Nike at goal (near 'E')
+        {
+            SceneModel nike;
+            nike.model = nikeModel;
+            nike.transform.position = cellToWorld(cols - 3, rows - 2, 0.0f);
+            nike.fallbackColor = glm::vec3(0.9f, 0.9f, 0.9f);
+            _sceneModels.push_back(std::move(nike));
+        }
+
+        // Monster patrol near center
+        {
+            SceneModel monster;
+            monster.model = monsterModel;
+            monster.transform.position = cellToWorld(cols / 2, rows / 2, 0.0f);
+            monster.fallbackColor = glm::vec3(0.8f, 0.7f, 0.6f);
+            _sceneModels.push_back(std::move(monster));
+        }
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         throw;
     }
 }
 
-HelloTriangle::~HelloTriangle() {}
+MazeApp::~MazeApp() {}
 
-void HelloTriangle::handleInput() {
+void MazeApp::handleInput() {
     if (_input.keyboard.keyStates[GLFW_KEY_ESCAPE] != GLFW_RELEASE) {
         glfwSetWindowShouldClose(_window, true);
         return;
@@ -103,7 +164,7 @@ void HelloTriangle::handleInput() {
     }
 }
 
-void HelloTriangle::renderFrame() {
+void MazeApp::renderFrame() {
     showFpsInWindowTitle();
 
     glClearColor(_clearColor.r, _clearColor.g, _clearColor.b, _clearColor.a);
@@ -121,10 +182,13 @@ void HelloTriangle::renderFrame() {
     _shader->setUniformInt("uDiffuse", 0);
 
     for (const auto& sceneModel : _sceneModels) {
+        if (!sceneModel.model) {
+            continue;
+        }
         const glm::mat4 modelMat = sceneModel.transform.getLocalMatrix();
         _shader->setUniformMat4("uModel", modelMat);
 
-        for (const auto& mesh : sceneModel.model.getMeshes()) {
+        for (const auto& mesh : sceneModel.model->getMeshes()) {
             const bool hasTexture = mesh.diffuseTexture != nullptr;
             _shader->setUniformBool("uHasTexture", hasTexture);
             _shader->setUniformVec3("uColor", mesh.baseColor * sceneModel.fallbackColor);
