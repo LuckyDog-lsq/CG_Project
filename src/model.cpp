@@ -9,6 +9,14 @@
 #include <unordered_map>
 #include <iostream>
 
+Model::Model(const std::string& filepath) {
+    std::cout << "Pretend loading model from: " << filepath << std::endl;
+
+
+
+
+
+}
 namespace {
 
     struct FaceVertex {
@@ -254,6 +262,12 @@ Model& Model::operator=(Model&& rhs) noexcept {
 
 Model::~Model() {
     cleanup();
+}
+
+void Model::draw() const {
+    glBindVertexArray(_vao);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(_indices.size()), GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
 }
 
 void Model::cleanup() {

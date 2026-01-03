@@ -26,7 +26,15 @@ private:
     std::unique_ptr<GLSLProgram> _shader;
     std::vector<SceneModel> _sceneModels;
 
+    float _moveSpeed = 5.0f;
+    float _mouseSensitivity = 0.02f;
+
     virtual void handleInput();
 
     virtual void renderFrame();
+
+    void updateCamera(float deltaTime); 
+
+    float _lastFrameTime = 0.0f;
+
 };

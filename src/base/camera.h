@@ -6,8 +6,13 @@
 class Camera {
 public:
     Transform transform;
+    void rotate(float yawDeg, float pitchDeg);
+    void move(const glm::vec3& delta) {
+        transform.position += delta;
+    }
 
-public:
+
+
     virtual ~Camera() = default;
 
     glm::mat4 getViewMatrix() const;
@@ -15,6 +20,9 @@ public:
     virtual glm::mat4 getProjectionMatrix() const = 0;
 
     virtual Frustum getFrustum() const = 0;
+
+    // 在 class Camera 内 public 区域加
+    
 };
 
 class PerspectiveCamera : public Camera {

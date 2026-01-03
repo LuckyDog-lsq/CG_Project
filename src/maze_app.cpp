@@ -1,13 +1,55 @@
-#include "maze_app.h"
+﻿#include "maze_app.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <string>
 #include <vector>
 
+void MazeApp::updateCamera(float deltaTime) {
+   
+   // 1获取鼠标当前位置
+    double xpos, ypos;
+    glfwGetCursorPos(_window, &xpos, &ypos);
+
+    // 2计算偏移量（以窗口中心为基准）
+    float deltaX = static_cast<float>(xpos - _windowWidth / 2);
+    float deltaY = static_cast<float>(_windowHeight / 2 - ypos); // 注意Y轴方向翻转
+
+    // 3旋转相机
+    _camera.rotate(-deltaX * _mouseSensitivity, deltaY * _mouseSensitivity);
+
+    // 4每帧把光标重置到窗口中心
+    glfwSetCursorPos(_window, _windowWidth / 2, _windowHeight / 2);
+
+
+    // 2️⃣ 键盘移动
+    glm::vec3 dir(0.0f);
+    if (_input.keyboard.keyStates[GLFW_KEY_W] == GLFW_PRESS)
+        dir += _camera.transform.getFront();
+    if (_input.keyboard.keyStates[GLFW_KEY_S] == GLFW_PRESS)
+        dir -= _camera.transform.getFront();
+    if (_input.keyboard.keyStates[GLFW_KEY_A] == GLFW_PRESS)
+        dir -= _camera.transform.getRight();
+    if (_input.keyboard.keyStates[GLFW_KEY_D] == GLFW_PRESS)
+        dir += _camera.transform.getRight();
+    if (_input.keyboard.keyStates[GLFW_KEY_Q] == GLFW_PRESS)
+        dir += Transform::getDefaultUp();
+    if (_input.keyboard.keyStates[GLFW_KEY_E] == GLFW_PRESS)
+        dir -= Transform::getDefaultUp();
+
+    if (glm::length(dir) > 0.0f)
+        dir = glm::normalize(dir);
+
+    _camera.move(dir * _moveSpeed * deltaTime);
+}
+
+
 MazeApp::MazeApp(const Options& options)
     : Application(options), _camera(glm::radians(60.0f), static_cast<float>(options.windowWidth) / options.windowHeight, 0.1f, 100.0f) {
     glEnable(GL_DEPTH_TEST);
+
+    // 在 MazeApp 构造函数里 glEnable(GL_DEPTH_TEST); 下面加
+    glfwSetInputMode(_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     _camera.transform.position = glm::vec3(0.0f, 4.0f, 10.5f);
     _camera.transform.lookAt(glm::vec3(0.0f, 0.0f, 0.0f));
@@ -108,7 +150,7 @@ MazeApp::MazeApp(const Options& options)
                     SceneModel sm;
                     sm.model = snowModel;
                     sm.transform.position = pos;
-                    sm.transform.scale = glm::vec3(1.8f);  // �Ŵ� 1.8 ����������϶
+                    sm.transform.scale = glm::vec3(1.8f);  // 放大到 1.8 倍，消除缝隙
                     sm.fallbackColor = glm::vec3(0.8f);
                     _sceneModels.push_back(std::move(sm));
                 }
@@ -127,7 +169,7 @@ MazeApp::MazeApp(const Options& options)
             SceneModel judy;
             judy.model = judyModel;
             judy.transform.position = cellToWorld(1, 1, 0.0f);
-            judy.transform.scale = glm::vec3(0.5f);  // ��С�� 50%
+            judy.transform.scale = glm::vec3(0.5f);  // 缩小到 50%
             judy.transform.lookAt(cellToWorld(3, 3, 0.0f));
             judy.fallbackColor = glm::vec3(0.7f, 0.7f, 0.9f);
             _sceneModels.push_back(std::move(judy));
@@ -138,7 +180,7 @@ MazeApp::MazeApp(const Options& options)
             SceneModel nike;
             nike.model = nikeModel;
             nike.transform.position = cellToWorld(cols - 3, rows - 2, 0.0f);
-            nike.transform.scale = glm::vec3(0.6f);  // ��С�� 60%
+            nike.transform.scale = glm::vec3(0.6f);  // 缩小到 60%
             nike.fallbackColor = glm::vec3(0.9f, 0.9f, 0.9f);
             _sceneModels.push_back(std::move(nike));
         }
@@ -148,7 +190,7 @@ MazeApp::MazeApp(const Options& options)
             SceneModel monster;
             monster.model = monsterModel;
             monster.transform.position = cellToWorld(cols / 2, rows / 2, 0.0f);
-            monster.transform.scale = glm::vec3(0.4f);  // ��С�� 40%
+            monster.transform.scale = glm::vec3(0.4f);  // 缩小到 40%
             monster.fallbackColor = glm::vec3(0.8f, 0.7f, 0.6f);
             _sceneModels.push_back(std::move(monster));
         }
@@ -173,7 +215,15 @@ void MazeApp::handleInput() {
     }
 }
 
+
+
 void MazeApp::renderFrame() {
+    float currentFrame = static_cast<float>(glfwGetTime());
+    float deltaTime = currentFrame - _lastFrameTime;
+    _lastFrameTime = currentFrame;
+
+    updateCamera(deltaTime);
+
     showFpsInWindowTitle();
 
     glClearColor(_clearColor.r, _clearColor.g, _clearColor.b, _clearColor.a);

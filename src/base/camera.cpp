@@ -1,5 +1,17 @@
 #include "camera.h"
 
+// 鼠标旋转（yaw 全局旋转，pitch 相机局部旋转）
+void Camera::rotate(float yawDeg, float pitchDeg) {
+    glm::quat qYaw = glm::angleAxis(glm::radians(yawDeg), Transform::getDefaultUp());
+    glm::quat qPitch = glm::angleAxis(glm::radians(pitchDeg), transform.getRight());
+    transform.rotation = glm::normalize(qYaw * transform.rotation * qPitch);
+}
+
+// 键盘移动
+//void Camera::move(const glm::vec3& delta) {
+//    transform.position += delta;
+//}
+
 glm::mat4 Camera::getViewMatrix() const {
     return glm::lookAt(
         transform.position, transform.position + transform.getFront(), transform.getUp());
