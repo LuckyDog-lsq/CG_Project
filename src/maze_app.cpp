@@ -63,11 +63,11 @@ MazeApp::MazeApp(const Options& options)
         const auto monsterModel = std::make_shared<Model>(
             loadModelFromFile(getAssetFullPath("obj/Monster.obj"), false));
         const auto judyModel = std::make_shared<Model>(
-            loadModelFromFile(getAssetFullPath("obj/judy_3d.obj"), false));
+            loadModelFromFile(getAssetFullPath("obj/judy_3d.obj"), true));
         const auto nikeModel = std::make_shared<Model>(
-            loadModelFromFile(getAssetFullPath("obj/nike.obj"), false));
+            loadModelFromFile(getAssetFullPath("obj/nike.obj"), true));
         const auto snowModel = std::make_shared<Model>(
-            loadModelFromFile(getAssetFullPath("obj/snow_box.obj"), false));
+            loadModelFromFile(getAssetFullPath("obj/snow_box.obj"), true));
 
         auto addInstance = [&](const std::shared_ptr<Model>& model, const glm::vec3& pos, const glm::vec3& color, const glm::vec3& scale = glm::vec3(1.0f)) {
             SceneModel sm;
