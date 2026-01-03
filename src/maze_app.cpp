@@ -63,16 +63,17 @@ MazeApp::MazeApp(const Options& options)
         const auto monsterModel = std::make_shared<Model>(
             loadModelFromFile(getAssetFullPath("obj/Monster.obj"), false));
         const auto judyModel = std::make_shared<Model>(
-            loadModelFromFile(getAssetFullPath("obj/judy_3d.obj"), true));
+            loadModelFromFile(getAssetFullPath("obj/judy_3d.obj"), false));
         const auto nikeModel = std::make_shared<Model>(
-            loadModelFromFile(getAssetFullPath("obj/nike.obj"), true));
+            loadModelFromFile(getAssetFullPath("obj/nike.obj"), false));
         const auto snowModel = std::make_shared<Model>(
-            loadModelFromFile(getAssetFullPath("obj/snow_box.obj"), true));
+            loadModelFromFile(getAssetFullPath("obj/snow_box.obj"), false));
 
-        auto addInstance = [&](const std::shared_ptr<Model>& model, const glm::vec3& pos, const glm::vec3& color) {
+        auto addInstance = [&](const std::shared_ptr<Model>& model, const glm::vec3& pos, const glm::vec3& color, const glm::vec3& scale = glm::vec3(1.0f)) {
             SceneModel sm;
             sm.model = model;
             sm.transform.position = pos;
+            sm.transform.scale = scale;
             sm.fallbackColor = color;
             _sceneModels.push_back(std::move(sm));
             };
@@ -104,7 +105,12 @@ MazeApp::MazeApp(const Options& options)
                     const glm::vec3 pos = glm::vec3(
                         startX + static_cast<float>(c) * cellSize, wallY,
                         startZ + static_cast<float>(r) * cellSize);
-                    addInstance(snowModel, pos, glm::vec3(0.8f));
+                    SceneModel sm;
+                    sm.model = snowModel;
+                    sm.transform.position = pos;
+                    sm.transform.scale = glm::vec3(1.8f);  // 放大到 1.8 倍，消除缝隙
+                    sm.fallbackColor = glm::vec3(0.8f);
+                    _sceneModels.push_back(std::move(sm));
                 }
             }
         }
@@ -121,6 +127,7 @@ MazeApp::MazeApp(const Options& options)
             SceneModel judy;
             judy.model = judyModel;
             judy.transform.position = cellToWorld(1, 1, 0.0f);
+            judy.transform.scale = glm::vec3(0.5f);  // 缩小到 50%
             judy.transform.lookAt(cellToWorld(3, 3, 0.0f));
             judy.fallbackColor = glm::vec3(0.7f, 0.7f, 0.9f);
             _sceneModels.push_back(std::move(judy));
@@ -131,6 +138,7 @@ MazeApp::MazeApp(const Options& options)
             SceneModel nike;
             nike.model = nikeModel;
             nike.transform.position = cellToWorld(cols - 3, rows - 2, 0.0f);
+            nike.transform.scale = glm::vec3(0.6f);  // 缩小到 60%
             nike.fallbackColor = glm::vec3(0.9f, 0.9f, 0.9f);
             _sceneModels.push_back(std::move(nike));
         }
@@ -140,6 +148,7 @@ MazeApp::MazeApp(const Options& options)
             SceneModel monster;
             monster.model = monsterModel;
             monster.transform.position = cellToWorld(cols / 2, rows / 2, 0.0f);
+            monster.transform.scale = glm::vec3(0.4f);  // 缩小到 40%
             monster.fallbackColor = glm::vec3(0.8f, 0.7f, 0.6f);
             _sceneModels.push_back(std::move(monster));
         }
