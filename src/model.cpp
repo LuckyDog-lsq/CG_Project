@@ -69,7 +69,9 @@ void loadMtlFile(
     const std::string& mtlPath, std::unordered_map<std::string, MaterialData>& materials) {
     std::ifstream file(mtlPath);
     if (!file.is_open()) {
-        throw std::runtime_error("failed to open mtl file: " + mtlPath);
+        // MTL file is optional - just return without error
+        std::cerr << "Warning: Could not open MTL file: " << mtlPath << " (using default materials)" << std::endl;
+        return;
     }
 
     std::string line;
@@ -80,7 +82,7 @@ void loadMtlFile(
         if (!currentName.empty()) {
             materials[currentName] = currentMaterial;
         }
-    };
+        };
 
     while (std::getline(file, line)) {
         line = trim(line);
@@ -96,9 +98,11 @@ void loadMtlFile(
             commitMaterial();
             iss >> currentName;
             currentMaterial = MaterialData{};
-        } else if (key == "Kd") {
+        }
+        else if (key == "Kd") {
             currentMaterial.diffuseColor = parseVec3(iss);
-        } else if (key == "map_Kd") {
+        }
+        else if (key == "map_Kd") {
             iss >> currentMaterial.diffuseTexture;
         }
     }

@@ -36,7 +36,6 @@ MazeApp::MazeApp(const Options& options)
         "in vec3 vNormal;\n"
         "in vec3 vWorldPos;\n"
         "in vec2 vTexCoord;\n"
-        "uniform vec3 uViewPos;\n"
         "uniform vec3 uLightDir;\n"
         "uniform vec3 uColor;\n"
         "uniform bool uHasTexture;\n"
@@ -76,7 +75,7 @@ MazeApp::MazeApp(const Options& options)
             sm.transform.position = pos;
             sm.fallbackColor = color;
             _sceneModels.push_back(std::move(sm));
-        };
+            };
 
         const float cellSize = 1.5f;
         const float wallY = -2.0f;
@@ -115,7 +114,7 @@ MazeApp::MazeApp(const Options& options)
                 startX + static_cast<float>(c) * cellSize,
                 y,
                 startZ + static_cast<float>(r) * cellSize);
-        };
+            };
 
         // Judy at start (near 'S')
         {
@@ -144,7 +143,8 @@ MazeApp::MazeApp(const Options& options)
             monster.fallbackColor = glm::vec3(0.8f, 0.7f, 0.6f);
             _sceneModels.push_back(std::move(monster));
         }
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         throw;
     }
@@ -177,7 +177,6 @@ void MazeApp::renderFrame() {
     _shader->use();
     _shader->setUniformMat4("uView", view);
     _shader->setUniformMat4("uProj", proj);
-    _shader->setUniformVec3("uViewPos", _camera.transform.position);
     _shader->setUniformVec3("uLightDir", lightDir);
     _shader->setUniformInt("uDiffuse", 0);
 
