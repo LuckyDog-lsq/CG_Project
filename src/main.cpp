@@ -1,4 +1,4 @@
-#include "hello_triangle.h"
+#include "maze_app.h"
 #include <iostream>
 
 Options getOptions(int argc, char* argv[]) {
@@ -8,8 +8,10 @@ Options getOptions(int argc, char* argv[]) {
     options.windowHeight = 720;
     options.windowResizable = true;
     options.vSync = true;
+    options.msaa = true;
     options.glVersion = {3, 3};
     options.backgroundColor = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    options.assetRootDir = "media/";
 
     return options;
 }
@@ -18,7 +20,7 @@ int main(int argc, char* argv[]) {
     Options options = getOptions(argc, argv);
 
     try {
-        HelloTriangle app(options);
+        MazeApp app(options);
         app.run();
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
