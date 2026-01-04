@@ -4,36 +4,204 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <random>
+#include <iostream>
+#include <cstdlib>
+#include <cstdio>
+#include <direct.h>
 
-const std::string lighteningVsRelPath = "lightening.vert";
-const std::string lighteningFsRelPath = "lightening.frag";
+void printCwd() {
+    char buf[1024];
+    if (getcwd(buf, sizeof(buf)) != nullptr) {
+        std::cerr << "CWD: " << buf << std::endl;
+    }
+    else {
+        std::perror("getcwd");
+    }
+}
+
+static const std::string gbufferVs ="shaders/gbuffer.vert";
+static const std::string gbufferFs = "shaders/gbuffer.frag";
+static const std::string quadVs = "shaders/quad.vert";
+static const std::string ssaoFs = "shaders/ssao.frag";
+static const std::string ssaoBlurFs = "shaders/ssao_blur.frag";
+static const std::string lightFs = "shaders/lightening.frag";
+static const std::string hdrFs = "shaders/hdr_quad.frag";
 
 void MazeApp::initResources() {
-    _gBufferShader = std::make_unique<GLSLProgram>();
-    _gBufferShader->attachVertexShaderFromFile("shaders/gbuffer.vert");
-    _gBufferShader->attachFragmentShaderFromFile("shaders/gbuffer.frag");
-    _gBufferShader->link();
+    printCwd();
+    try {
+        _gBufferShader = std::make_unique<GLSLProgram>();
+        _gBufferShader->attachVertexShaderFromFile(getAssetFullPath(gbufferVs));
+        _gBufferShader->attachFragmentShaderFromFile(getAssetFullPath(gbufferFs));
+        _gBufferShader->link();
+        std::cerr << "Loaded shader: " << gbufferVs << " + " << gbufferFs << std::endl;
 
-    _ssaoShader = std::make_unique<GLSLProgram>();
-    _ssaoShader->attachVertexShaderFromFile("shaders/quad.vert");
-    _ssaoShader->attachFragmentShaderFromFile("shaders/ssao.frag");
-    _ssaoShader->link();
+        _ssaoShader = std::make_unique<GLSLProgram>();
+        _ssaoShader->attachVertexShaderFromFile(getAssetFullPath(quadVs));
+        _ssaoShader->attachFragmentShaderFromFile(getAssetFullPath(ssaoFs));
+        _ssaoShader->link();
+        std::cerr << "Loaded shader: " << quadVs << " + " << ssaoFs << std::endl;
 
-    _ssaoBlurShader = std::make_unique<GLSLProgram>();
-    _ssaoBlurShader->attachVertexShaderFromFile("shaders/quad.vert");
-    _ssaoBlurShader->attachFragmentShaderFromFile("shaders/ssao_blur.frag");
-    _ssaoBlurShader->link();
+        _ssaoBlurShader = std::make_unique<GLSLProgram>();
+        _ssaoBlurShader->attachVertexShaderFromFile(getAssetFullPath(quadVs));
+        _ssaoBlurShader->attachFragmentShaderFromFile(getAssetFullPath(ssaoBlurFs));
+        _ssaoBlurShader->link();
+        std::cerr << "Loaded shader: " << quadVs << " + " << ssaoBlurFs << std::endl;
 
-    _lightingShader = std::make_unique<GLSLProgram>();
-    _lightingShader->attachVertexShaderFromFile("shaders/quad.vert");
-    _lightingShader->attachFragmentShaderFromFile("shaders/lighting.frag");
-    _lightingShader->link();
+        _lightingShader = std::make_unique<GLSLProgram>();
+        _lightingShader->attachVertexShaderFromFile(getAssetFullPath(quadVs));
+        _lightingShader->attachFragmentShaderFromFile(getAssetFullPath(lightFs));
+        _lightingShader->link();
+        std::cerr << "Loaded shader: " << quadVs << " + " << lightFs << std::endl;
 
-    _hdrShader = std::make_unique<GLSLProgram>();
-    _hdrShader->attachVertexShaderFromFile("shaders/quad.vert");
-    _hdrShader->attachFragmentShaderFromFile("shaders/hdr_quad.frag");
-    _hdrShader->link();
+        _hdrShader = std::make_unique<GLSLProgram>();
+        _hdrShader->attachVertexShaderFromFile(getAssetFullPath(quadVs));
+        _hdrShader->attachFragmentShaderFromFile(getAssetFullPath(hdrFs));
+        _hdrShader->link();
+        std::cerr << "Loaded shader: " << quadVs << " + " << hdrFs << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "initResources failed: " << e.what() << std::endl;
+        // 保持指针为 nullptr，renderFrame 会检测并安全退出或显示错误
+    }
 }
+
+void MazeApp::createGBuffer() {
+    glGenFramebuffers(1, &gBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+    // position
+    glGenTextures(1, &gPosition);
+    glBindTexture(GL_TEXTURE_2D, gPosition);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, _windowWidth, _windowHeight, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
+    // normal
+    glGenTextures(1, &gNormal);
+    glBindTexture(GL_TEXTURE_2D, gNormal);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, _windowWidth, _windowHeight, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+    // albedo
+    glGenTextures(1, &gAlbedo);
+    glBindTexture(GL_TEXTURE_2D, gAlbedo);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, _windowWidth, _windowHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedo, 0);
+    // tell OpenGL which color attachments we'll use (of this framebuffer) for rendering
+    GLuint attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+    glDrawBuffers(3, attachments);
+    // depth renderbuffer
+    glGenRenderbuffers(1, &rboDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, _windowWidth, _windowHeight);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cerr << "GBuffer Framebuffer not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void MazeApp::createSSAOBuffer() {
+    glGenFramebuffers(1, &ssaoFBO); glGenTextures(1, &ssaoColorBuffer);
+    glBindTexture(GL_TEXTURE_2D, ssaoColorBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, _windowWidth, _windowHeight, 0, GL_RED, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, ssaoFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ssaoColorBuffer, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) std::cerr << "SSAO FBO incomplete\n";
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // blur
+    glGenFramebuffers(1, &ssaoBlurFBO); glGenTextures(1, &ssaoColorBufferBlur);
+    glBindTexture(GL_TEXTURE_2D, ssaoColorBufferBlur);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, _windowWidth, _windowHeight, 0, GL_RED, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, ssaoBlurFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ssaoColorBufferBlur, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    //hdr
+    glGenFramebuffers(1, &hdrFBO); glGenTextures(1, &hdrColorBuffer);
+    glBindTexture(GL_TEXTURE_2D, hdrColorBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, _windowWidth, _windowHeight, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdrColorBuffer, 0);
+    // share depth with gBuffer's depth renderbuffer or create a new one; for simplicity reuse rboDepth:
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) std::cerr << "HDR FBO incomplete\n";
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    //kernel
+    std::uniform_real_distribution<float> randomFloats(0.0f, 1.0f);
+    std::default_random_engine generator;
+    ssaoKernel.resize(64);
+    for (unsigned int i = 0; i < 64; ++i) {
+        glm::vec3 sample(
+            randomFloats(generator) * 2.0 - 1.0,
+            randomFloats(generator) * 2.0 - 1.0,
+            randomFloats(generator)
+        );
+        sample = glm::normalize(sample);
+        sample *= randomFloats(generator);
+        float scale = float(i) / 64.0;
+        scale = glm::mix(0.1f, 1.0f, scale * scale);
+        sample *= scale;
+        ssaoKernel[i] = sample;
+    }
+    // noise
+    std::vector<glm::vec3> ssaoNoise;
+    for (unsigned int i = 0; i < 16; i++) {
+        glm::vec3 noise(
+            randomFloats(generator) * 2.0 - 1.0,
+            randomFloats(generator) * 2.0 - 1.0,
+            0.0f
+        );
+        ssaoNoise.push_back(noise);
+    }
+    glGenTextures(1, &noiseTexture);
+    glBindTexture(GL_TEXTURE_2D, noiseTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, 4, 4, 0, GL_RGB, GL_FLOAT, ssaoNoise.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    //quad
+    float quadVertices[] = {
+        // positions   // texcoords
+        -1.0f,  1.0f,  0.0f, 1.0f,
+        -1.0f, -1.0f,  0.0f, 0.0f,
+         1.0f, -1.0f,  1.0f, 0.0f,
+
+        -1.0f,  1.0f,  0.0f, 1.0f,
+         1.0f, -1.0f,  1.0f, 0.0f,
+         1.0f,  1.0f,  1.0f, 1.0f
+    };
+    glGenVertexArrays(1, &quadVAO);
+    glGenBuffers(1, &quadVBO);
+    glBindVertexArray(quadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glBindVertexArray(0);
+    //upload
+    _ssaoShader->use();
+    for (unsigned int i = 0; i < 64; ++i) {
+        _ssaoShader->setUniformVec3("samples[" + std::to_string(i) + "]", ssaoKernel[i]);
+    }
+    _ssaoShader->setUniformFloat("radius", ssaoRadius);
+    _ssaoShader->setUniformFloat("bias", ssaoBias);
+    _ssaoShader->setUniformMat4("projection", _camera.getProjectionMatrix());
+    _ssaoShader->setUniformVec2("noiseScale", glm::vec2((float)_windowWidth / 4.0f, (float)_windowHeight / 4.0f));
+}
+
 void MazeApp::updateCamera(float deltaTime) {
     // 1️⃣ 获取鼠标当前位置
     double xpos, ypos;
@@ -103,7 +271,6 @@ void MazeApp::updateCamera(float deltaTime) {
 }
 
 
-
 MazeApp::MazeApp(const Options& options)
     : Application(options), _camera(glm::radians(60.0f), static_cast<float>(options.windowWidth) / options.windowHeight, 0.1f, 100.0f) {
     glEnable(GL_DEPTH_TEST);
@@ -161,10 +328,11 @@ MazeApp::MazeApp(const Options& options)
     _shader->attachFragmentShader(fsCode);
     _shader->link();
 
-    _phongShader.reset(new GLSLProgram());
-    _phongShader->attachVertexShaderFromFile(getAssetFullPath(lighteningVsRelPath));
-    _phongShader->attachFragmentShaderFromFile(getAssetFullPath(lighteningFsRelPath));
-    _phongShader->link();
+
+    //init
+    initResources();
+    createGBuffer();
+    createSSAOBuffer();
 
     try {
         const auto monsterModel = std::make_shared<Model>(
@@ -267,6 +435,7 @@ MazeApp::MazeApp(const Options& options)
             monster.fallbackColor = glm::vec3(0.8f, 0.7f, 0.6f);
             _sceneModels.push_back(std::move(monster));
         }
+
     }
     catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
@@ -287,8 +456,6 @@ void MazeApp::handleInput() {
         _windowReized = false;
     }
 }
-
-
 
 void MazeApp::renderFrame() {
     float currentFrame = static_cast<float>(glfwGetTime());
@@ -311,42 +478,40 @@ void MazeApp::renderFrame() {
     _shader->setUniformMat4("uProj", proj);
     _shader->setUniformVec3("uLightDir", lightDir);
     _shader->setUniformInt("uDiffuse", 0);
-    _phongShader->use();
 
-    // camera matrices
-    glm::mat4 view = _camera.getViewMatrix();
+
+    // 1. Geometry pass: render scene into g-buffer
+    glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+
+    _gBufferShader->use();
     glm::mat4 projection = _camera.getProjectionMatrix();
+    _gBufferShader->setUniformMat4("view", view);
+    _gBufferShader->setUniformMat4("projection", projection);
 
-    _phongShader->setUniformMat4("uView", view);
-    _phongShader->setUniformMat4("uProj", projection);
-    _phongShader->setUniformVec3("viewPos", _camera.); // 根据你的 Camera API
+    for (const SceneModel& sm : _sceneModels) {
+        if (!sm.model) continue;
+        glm::mat4 model = sm.transform.getLocalMatrix();
+        glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(model)));
+        _gBufferShader->setUniformMat4("model", model);
+        _gBufferShader->setUniformMat3("normalMatrix", normalMat);
 
-    // light uniforms
-    _phongShader->setUniform("lightPos", _lightPos);
-    _phongShader->setUniform("lightColor", _lightColor);
+        for (const auto& mesh : sm.model->getMeshes()) {
+            bool hasTexture = (mesh.diffuseTexture != nullptr);
+            _gBufferShader->setUniformBool("useAlbedoTexture", hasTexture);
 
-    // global material defaults (each model can override)
-    _phongShader->setUniform("materialShininess", _materialShininess);
-
-
-    for (const auto& sceneModel : _sceneModels) {
-        if (!sceneModel.model) {
-            continue;
-        }
-        const glm::mat4 modelMat = sceneModel.transform.getLocalMatrix();
-        _shader->setUniformMat4("uModel", modelMat);
-
-        for (const auto& mesh : sceneModel.model->getMeshes()) {
-            const bool hasTexture = mesh.diffuseTexture != nullptr;
-            _shader->setUniformBool("uHasTexture", hasTexture);
-            _shader->setUniformVec3("uColor", mesh.baseColor * sceneModel.fallbackColor);
+            glm::vec3 finalColor = mesh.baseColor * sm.fallbackColor;
+            _gBufferShader->setUniformVec3("fallbackColor", finalColor);
 
             if (hasTexture) {
-                mesh.diffuseTexture->bind(0);
+                glActiveTexture(GL_TEXTURE0);
+                mesh.diffuseTexture->bind();
+                _gBufferShader->setUniformInt("albedoTex", 0);
             }
 
             glBindVertexArray(mesh.vao);
-            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indexCount), GL_UNSIGNED_INT, nullptr);
+            glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, 0);
             glBindVertexArray(0);
 
             if (hasTexture) {
@@ -354,4 +519,66 @@ void MazeApp::renderFrame() {
             }
         }
     }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // 2. SSAO pass
+    glBindFramebuffer(GL_FRAMEBUFFER, ssaoFBO);
+    glClear(GL_COLOR_BUFFER_BIT);
+    _ssaoShader->use();
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, gPosition); _ssaoShader->setUniformInt("gPosition", 0);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, gNormal);   _ssaoShader->setUniformInt("gNormal", 1);
+    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, noiseTexture); _ssaoShader->setUniformInt("texNoise", 2);
+    _ssaoShader->setUniformMat4("projection", projection);
+    _ssaoShader->setUniformFloat("radius", ssaoRadius);
+    _ssaoShader->setUniformFloat("bias", ssaoBias);
+    _ssaoShader->setUniformVec2("noiseScale", glm::vec2((float)_windowWidth / 4.0f, (float)_windowHeight / 4.0f));
+    // render quad
+    glBindVertexArray(quadVAO);
+    glDisable(GL_DEPTH_TEST);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // 3. SSAO blur
+    glBindFramebuffer(GL_FRAMEBUFFER, ssaoBlurFBO);
+    glClear(GL_COLOR_BUFFER_BIT);
+    _ssaoBlurShader->use();
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, ssaoColorBuffer); _ssaoBlurShader->setUniformInt("ssaoInput", 0);
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // 4. Lighting pass (render to HDR buffer)
+    glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    _lightingShader->use();
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, gPosition); _lightingShader->setUniformInt("gPosition", 0);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, gNormal);   _lightingShader->setUniformInt("gNormal", 1);
+    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, gAlbedo);   _lightingShader->setUniformInt("gAlbedo", 2);
+    glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, ssaoColorBufferBlur); _lightingShader->setUniformInt("ssao", 3);
+
+    _lightingShader->setUniformVec3("viewPos", _camera.transform.position);
+    _lightingShader->setUniformVec3("lightPos", _lightPos);
+    _lightingShader->setUniformVec3("lightColor", _lightColor);
+    _lightingShader->setUniformFloat("ambientStrength", ambientStrength);
+    _lightingShader->setUniformVec3("materialSpecular", _materialSpecular);
+    _lightingShader->setUniformFloat("materialShininess", _materialShininess);
+
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // 5. HDR Tonemap + Gamma to default framebuffer
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    _hdrShader->use();
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, hdrColorBuffer); _hdrShader->setUniformInt("hdrBuffer", 0);
+    _hdrShader->setUniformFloat("exposure", exposure);
+    _hdrShader->setUniformFloat("gamma", gammaVal);
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
 }

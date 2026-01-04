@@ -49,7 +49,13 @@ private:
 
     virtual void renderFrame();
 
-    void updateCamera(float deltaTime); 
+    //fbos
+    void createGBuffer();
+
+    void createSSAOBuffer();
+
+
+    void updateCamera(float deltaTime);
 
     float _lastFrameTime = 0.0f;
 
@@ -88,4 +94,8 @@ private:
     //º¯Êý
     void initResources();
 
+    glm::vec3 _lightPos = glm::vec3(0.0f, 4.0f, 0.0f);
+    glm::vec3 _lightColor = glm::vec3(1.0f);
+    glm::vec3 _materialSpecular = glm::vec3(0.5f);
+    float _materialShininess = 32.0f;
 };

@@ -9,6 +9,7 @@ cmake_minimum_required(VERSION 3.20...4.1.1)
 #set(CMAKE_CXX_EXTENSIONS OFF)
 set(SOURCE_PATH ${CMAKE_SOURCE_DIR}/src)
 set(THIRD_PARTY_LIBRARY_PATH ${CMAKE_SOURCE_DIR}/external)
+set(SHADER_TARGET_PATH ${CMAKE_SOURCE_DIR}/src/shaders)
 
 project(final_project LANGUAGES C CXX VERSION 1.1)
 
@@ -29,8 +30,13 @@ file(GLOB BASE_HDR ${SOURCE_PATH}/base/*.h)
 file(GLOB BASE_SRC ${SOURCE_PATH}/base/*.cpp)
 file(GLOB PROJECT_HDR ${SOURCE_PATH}/*.h)
 file(GLOB PROJECT_SRC ${SOURCE_PATH}/*.cpp)
+file(GLOB PROJECT_SHADERS ${SOURCE_PATH}/shaders/*.vert ./*.geom ./*.frag)
 
-add_executable(final_project ${BASE_HDR} ${BASE_SRC} ${PROJECT_HDR} ${PROJECT_SRC})
+add_executable(final_project ${BASE_HDR} ${BASE_SRC} ${PROJECT_HDR} ${PROJECT_SRC}  ${PROJECT_SHADERS})
+source_group("Header Files" FILES ${BASE_HDR} ${PROJECT_HDR})
+source_group("Source Files" FILES ${BASE_SRC} ${PROJECT_SRC})
+source_group("Shader Files" FILES ${PROJECT_SHADERS})
+
 if (win32)
 set_target_properties(final_project PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/Bin"
