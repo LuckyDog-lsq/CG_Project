@@ -446,13 +446,21 @@ MazeApp::MazeApp(const Options& options)
 MazeApp::~MazeApp() {}
 
 void MazeApp::handleInput() {
-    if (_input.keyboard.keyStates[GLFW_KEY_ESCAPE] != GLFW_RELEASE) {
+    //1️⃣ 每一帧轮询键盘状态（关键！）
+    for (int i = 0; i <= GLFW_KEY_LAST; ++i) {
+        _input.keyboard.keyStates[i] = glfwGetKey(_window, i);
+    }
+
+    //2️⃣ ESC 退出
+    if (_input.keyboard.keyStates[GLFW_KEY_ESCAPE] == GLFW_PRESS) {
         glfwSetWindowShouldClose(_window, true);
         return;
     }
 
+    //3️⃣ 窗口 resize 后更新相机 aspect
     if (_windowReized) {
-        _camera.aspect = static_cast<float>(_windowWidth) / static_cast<float>(_windowHeight);
+        _camera.aspect =
+            static_cast<float>(_windowWidth) / static_cast<float>(_windowHeight);
         _windowReized = false;
     }
 }
