@@ -8,7 +8,6 @@ in vec3 Normal;
 in vec2 TexCoords;
 
 uniform vec3 fallbackColor;
-// If you have diffuse texture, sample it; otherwise use fallbackColor
 uniform bool useAlbedoTexture;
 uniform sampler2D albedoTex;
 

@@ -9,6 +9,11 @@
 #include <cstdlib>
 #include <cstdio>
 #include <direct.h>
+#include <sstream>
+#include <iomanip>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
 
 void printCwd() {
     char buf[1024];
@@ -36,6 +41,8 @@ void MazeApp::initResources() {
         _gBufferShader->attachFragmentShaderFromFile(getAssetFullPath(gbufferFs));
         _gBufferShader->link();
         std::cerr << "Loaded shader: " << gbufferVs << " + " << gbufferFs << std::endl;
+        _gBufferShader->use();
+        _gBufferShader->setUniformInt("albedoTex", 0);
 
         _ssaoShader = std::make_unique<GLSLProgram>();
         _ssaoShader->attachVertexShaderFromFile(getAssetFullPath(quadVs));
@@ -445,18 +452,6 @@ MazeApp::MazeApp(const Options& options)
 
 MazeApp::~MazeApp() {}
 
-void MazeApp::handleInput() {
-    if (_input.keyboard.keyStates[GLFW_KEY_ESCAPE] != GLFW_RELEASE) {
-        glfwSetWindowShouldClose(_window, true);
-        return;
-    }
-
-    if (_windowReized) {
-        _camera.aspect = static_cast<float>(_windowWidth) / static_cast<float>(_windowHeight);
-        _windowReized = false;
-    }
-}
-
 void MazeApp::renderFrame() {
     float currentFrame = static_cast<float>(glfwGetTime());
     float deltaTime = currentFrame - _lastFrameTime;
@@ -465,6 +460,18 @@ void MazeApp::renderFrame() {
     updateCamera(deltaTime);
 
     showFpsInWindowTitle();
+
+    std::ostringstream title;
+    title << "Maze | FPS: " << static_cast<int>(1.0f / deltaTime)
+        << " | Light(" << std::fixed << std::setprecision(1)
+        << _lightPos.x << "," << _lightPos.y << "," << _lightPos.z << ")"
+        << " | Intensity:" << _lightIntensity
+        << " | Exposure:" << exposure
+        << " | SSAO:" << ssaoRadius
+        << " | Ambient:" << ambientStrength;
+    glfwSetWindowTitle(_window, title.str().c_str());
+
+
 
     glClearColor(_clearColor.r, _clearColor.g, _clearColor.b, _clearColor.a);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -481,45 +488,52 @@ void MazeApp::renderFrame() {
 
 
     // 1. Geometry pass: render scene into g-buffer
+    // 进入几何通道
     glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
 
     _gBufferShader->use();
     glm::mat4 projection = _camera.getProjectionMatrix();
+
+    // 全局 view/projection
     _gBufferShader->setUniformMat4("view", view);
     _gBufferShader->setUniformMat4("projection", projection);
 
     for (const SceneModel& sm : _sceneModels) {
         if (!sm.model) continue;
+
         glm::mat4 model = sm.transform.getLocalMatrix();
         glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(model)));
+
         _gBufferShader->setUniformMat4("model", model);
         _gBufferShader->setUniformMat3("normalMatrix", normalMat);
 
-        for (const auto& mesh : sm.model->getMeshes()) {
+        for (const Mesh& mesh : sm.model->getMeshes()) {
             bool hasTexture = (mesh.diffuseTexture != nullptr);
-            _gBufferShader->setUniformBool("useAlbedoTexture", hasTexture);
 
             glm::vec3 finalColor = mesh.baseColor * sm.fallbackColor;
             _gBufferShader->setUniformVec3("fallbackColor", finalColor);
+            _gBufferShader->setUniformBool("useAlbedoTexture", hasTexture ? true : false);
 
+            // 绑定纹理到 unit 0
+            glActiveTexture(GL_TEXTURE0);
             if (hasTexture) {
-                glActiveTexture(GL_TEXTURE0);
                 mesh.diffuseTexture->bind();
-                _gBufferShader->setUniformInt("albedoTex", 0);
+            }
+            else {
+                glBindTexture(GL_TEXTURE_2D, 0);
             }
 
+            // 绘制
             glBindVertexArray(mesh.vao);
-            glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, 0);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indexCount), GL_UNSIGNED_INT, 0);
             glBindVertexArray(0);
 
-            if (hasTexture) {
-                mesh.diffuseTexture->unbind();
-            }
+            if (hasTexture) mesh.diffuseTexture->unbind();
         }
     }
-
+    _gBufferShader->unuse();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // 2. SSAO pass
@@ -559,9 +573,11 @@ void MazeApp::renderFrame() {
     glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, gAlbedo);   _lightingShader->setUniformInt("gAlbedo", 2);
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, ssaoColorBufferBlur); _lightingShader->setUniformInt("ssao", 3);
 
+
     _lightingShader->setUniformVec3("viewPos", _camera.transform.position);
     _lightingShader->setUniformVec3("lightPos", _lightPos);
-    _lightingShader->setUniformVec3("lightColor", _lightColor);
+    //光源颜色 * 强度
+    _lightingShader->setUniformVec3("lightColor", _lightColor * _lightIntensity);
     _lightingShader->setUniformFloat("ambientStrength", ambientStrength);
     _lightingShader->setUniformVec3("materialSpecular", _materialSpecular);
     _lightingShader->setUniformFloat("materialShininess", _materialShininess);
@@ -581,4 +597,86 @@ void MazeApp::renderFrame() {
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 
+
+}
+
+void MazeApp::handleInput() {
+    if (_input.keyboard.keyStates[GLFW_KEY_ESCAPE] != GLFW_RELEASE) {
+        glfwSetWindowShouldClose(_window, true);
+        return;
+    }
+
+    if (_windowReized) {
+        _camera.aspect = static_cast<float>(_windowWidth) / static_cast<float>(_windowHeight);
+        _windowReized = false;
+    }
+    float deltaTime = static_cast<float>(glfwGetTime()) - _lastFrameTime;
+
+    // 光源位置调节（小键盘或方向键）
+    if (_input.keyboard.keyStates[GLFW_KEY_KP_4] == GLFW_PRESS) { // 左
+        _lightPos.x -= _lightMoveSpeed * deltaTime;
+    }
+    if (_input.keyboard.keyStates[GLFW_KEY_KP_6] == GLFW_PRESS) { // 右
+        _lightPos.x += _lightMoveSpeed * deltaTime;
+    }
+    if (_input.keyboard.keyStates[GLFW_KEY_KP_8] == GLFW_PRESS) { // 前
+        _lightPos.z -= _lightMoveSpeed * deltaTime;
+    }
+    if (_input.keyboard.keyStates[GLFW_KEY_KP_2] == GLFW_PRESS) { // 后
+        _lightPos.z += _lightMoveSpeed * deltaTime;
+    }
+    if (_input.keyboard.keyStates[GLFW_KEY_KP_7] == GLFW_PRESS) { // 上
+        _lightPos.y += _lightMoveSpeed * deltaTime;
+    }
+    if (_input.keyboard.keyStates[GLFW_KEY_KP_9] == GLFW_PRESS) { // 下
+        _lightPos.y -= _lightMoveSpeed * deltaTime;
+    }
+
+    // 光照强度（1/2 键）
+    if (_input.keyboard.keyStates[GLFW_KEY_1] == GLFW_PRESS && !_keyPressed[GLFW_KEY_1]) {
+        _lightIntensity = glm::max(0.1f, _lightIntensity - 0.1f);
+        _keyPressed[GLFW_KEY_1] = true;
+    }
+    if (_input.keyboard.keyStates[GLFW_KEY_2] == GLFW_PRESS && !_keyPressed[GLFW_KEY_2]) {
+        _lightIntensity += 0.1f;
+        _keyPressed[GLFW_KEY_2] = true;
+    }
+
+    // 曝光（3/4 键）
+    if (_input.keyboard.keyStates[GLFW_KEY_3] == GLFW_PRESS && !_keyPressed[GLFW_KEY_3]) {
+        exposure = glm::max(0.1f, exposure - 0.1f);
+        _keyPressed[GLFW_KEY_3] = true;
+    }
+    if (_input.keyboard.keyStates[GLFW_KEY_4] == GLFW_PRESS && !_keyPressed[GLFW_KEY_4]) {
+        exposure += 0.1f;
+        _keyPressed[GLFW_KEY_4] = true;
+    }
+
+    // SSAO 半径（5/6 键）
+    if (_input.keyboard.keyStates[GLFW_KEY_5] == GLFW_PRESS && !_keyPressed[GLFW_KEY_5]) {
+        ssaoRadius = glm::max(0.1f, ssaoRadius - 0.05f);
+        _keyPressed[GLFW_KEY_5] = true;
+    }
+    if (_input.keyboard.keyStates[GLFW_KEY_6] == GLFW_PRESS && !_keyPressed[GLFW_KEY_6]) {
+        ssaoRadius += 0.05f;
+        _keyPressed[GLFW_KEY_6] = true;
+    }
+
+    // 环境光强度（7/8 键）
+    if (_input.keyboard.keyStates[GLFW_KEY_7] == GLFW_PRESS && !_keyPressed[GLFW_KEY_7]) {
+        ambientStrength = glm::max(0.0f, ambientStrength - 0.05f);
+        _keyPressed[GLFW_KEY_7] = true;
+    }
+    if (_input.keyboard.keyStates[GLFW_KEY_8] == GLFW_PRESS && !_keyPressed[GLFW_KEY_8]) {
+        ambientStrength = glm::min(1.0f, ambientStrength + 0.05f);
+        _keyPressed[GLFW_KEY_8] = true;
+    }
+
+    //重置所有按键状态（释放时）
+    for (int key : {GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4,
+        GLFW_KEY_5, GLFW_KEY_6, GLFW_KEY_7, GLFW_KEY_8}) {
+        if (_input.keyboard.keyStates[key] == GLFW_RELEASE) {
+            _keyPressed[key] = false;
+        }
+    }
 }

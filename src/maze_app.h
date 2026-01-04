@@ -7,6 +7,7 @@
 #include "model.h"
 #include <memory>
 #include <vector>
+#include<map>
 
 // High-level app that builds a snow-box maze and places Judy/Nike/Monster models.
 class MazeApp : public Application {
@@ -14,6 +15,8 @@ public:
     MazeApp(const Options& options);
 
     ~MazeApp();
+
+    void renderScene();
 
 private:
     struct AABB {
@@ -49,6 +52,8 @@ private:
 
     virtual void renderFrame();
 
+    void renderUI();
+
     //fbos
     void createGBuffer();
 
@@ -60,6 +65,17 @@ private:
     float _lastFrameTime = 0.0f;
 
     //光照效果实现
+        //
+    struct GBufferUniforms {
+        GLint model = -1;
+        GLint view = -1;
+        GLint projection = -1;
+        GLint normalMatrix = -1;
+        GLint fallbackColor = -1;
+        GLint useAlbedoTexture = -1;
+        GLint albedoTex = -1;
+    } _gBufferUniforms;
+
     std::unique_ptr<GLSLProgram> _gBufferShader;
     std::unique_ptr<GLSLProgram> _ssaoShader;
     std::unique_ptr<GLSLProgram> _ssaoBlurShader;
@@ -84,18 +100,27 @@ private:
     std::vector<glm::vec3> ssaoKernel;
     GLuint noiseTexture = 0;
 
+    //函数
+    void initResources();
+
     // parameters
     float ssaoRadius = 0.5f;
     float ssaoBias = 0.025f;
     float ambientStrength = 0.12f;
     float exposure = 1.0f;
     float gammaVal = 2.2f;
-
-    //函数
-    void initResources();
-
     glm::vec3 _lightPos = glm::vec3(0.0f, 4.0f, 0.0f);
-    glm::vec3 _lightColor = glm::vec3(1.0f);
+    glm::vec3 _lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
     glm::vec3 _materialSpecular = glm::vec3(0.5f);
     float _materialShininess = 32.0f;
+
+  
+    float _lightIntensity = 1.0f;  // 新增：光强倍数
+
+    // 参数调节速度
+    const float _lightMoveSpeed = 5.0f;      // 光源移动速度 (单位/秒)
+    const float _paramAdjustSpeed = 0.5f;    // 参数增减速度
+
+    // 键盘状态去抖（防止连续按键导致疯狂变化）
+    std::map<int, bool> _keyPressed;
 };

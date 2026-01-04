@@ -18,6 +18,7 @@ struct Mesh {
     std::shared_ptr<ImageTexture2D> diffuseTexture;
 };
 
+
 class Model {
 public:
     Model(const std::string& filepath);
