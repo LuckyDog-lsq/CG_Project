@@ -12,10 +12,6 @@
 Model::Model(const std::string& filepath) {
     std::cout << "Pretend loading model from: " << filepath << std::endl;
 
-
-
-
-
 }
 namespace {
 
