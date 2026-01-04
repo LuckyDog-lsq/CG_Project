@@ -8,6 +8,9 @@
 #include <memory>
 #include <vector>
 #include<map>
+#include <cmath>
+#include <sstream>
+#include <iomanip>
 
 // High-level app that builds a snow-box maze and places Judy/Nike/Monster models.
 class MazeApp : public Application {
@@ -15,6 +18,8 @@ public:
     MazeApp(const Options& options);
 
     ~MazeApp();
+
+    void updateSun(float currentTime);
 
     void renderScene();
 
@@ -123,4 +128,13 @@ private:
 
     // 键盘状态去抖（防止连续按键导致疯狂变化）
     std::map<int, bool> _keyPressed;
+
+    // --- Sun / time of day 控制 ---
+    bool _sunAuto = true;              // 自动运行时间
+    float _timeOfDay = 12.0f;          // 当前时间（小时，0..24），初始中午
+    float _timeScale = 60.0f;          // 模拟速度：真实秒 -> 模拟分钟（例如 60 => 1s = 1min）
+    float _lastSunUpdate = 0.0f;       // 用于增量计算
+    glm::vec3 _sunDirection = glm::vec3(0.0f, -1.0f, 0.0f);
+    glm::vec3 _sunColor = glm::vec3(1.0f, 1.0f, 0.95f);
+    float _sunIntensity = 1.0f;
 };

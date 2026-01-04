@@ -60,7 +60,6 @@ void MazeApp::initResources() {
         _lightingShader->attachVertexShaderFromFile(getAssetFullPath(quadVs));
         _lightingShader->attachFragmentShaderFromFile(getAssetFullPath(lightFs));
         _lightingShader->link();
-        std::cerr << "Loaded shader: " << quadVs << " + " << lightFs << std::endl;
 
         _hdrShader = std::make_unique<GLSLProgram>();
         _hdrShader->attachVertexShaderFromFile(getAssetFullPath(quadVs));
@@ -70,7 +69,6 @@ void MazeApp::initResources() {
     }
     catch (const std::exception& e) {
         std::cerr << "initResources failed: " << e.what() << std::endl;
-        // 保持指针为 nullptr，renderFrame 会检测并安全退出或显示错误
     }
 }
 
@@ -282,6 +280,33 @@ MazeApp::MazeApp(const Options& options)
     : Application(options), _camera(glm::radians(60.0f), static_cast<float>(options.windowWidth) / options.windowHeight, 0.1f, 100.0f) {
     glEnable(GL_DEPTH_TEST);
 
+    glEnable(GL_DEPTH_TEST);
+    glfwSetInputMode(_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    _camera.transform.position = glm::vec3(0.0f, -1.7f, 10.5f);
+    _camera.transform.lookAt(glm::vec3(0.0f, 0.0f, 0.0f));
+
+    // 初始化时间相关变量
+    _lastFrameTime = 0.0f;
+    _lastSunUpdate = 0.0f;
+    _timeOfDay = 12.0f;      // 默认中午
+    _timeScale = 60.0f;      // 默认速度
+    _sunAuto = true;         // 默认自动
+
+    // 初始化按键状态
+    for (int i = 0; i <= GLFW_KEY_LAST; ++i) {
+        _keyPressed[i] = false;
+    }
+
+    // 初始化材质参数
+    exposure = 1.0f;
+    gammaVal = 2.2f;
+    ssaoRadius = 0.5f;
+    ssaoBias = 0.025f;
+    ambientStrength = 0.1f;
+    _materialSpecular = glm::vec3(0.3f);
+    _materialShininess = 32.0f;
+
     // 在 MazeApp 构造函数里 glEnable(GL_DEPTH_TEST); 下面加
     glfwSetInputMode(_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -340,7 +365,14 @@ MazeApp::MazeApp(const Options& options)
     initResources();
     createGBuffer();
     createSSAOBuffer();
-
+    // 初始化 ImGui
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(_window, true);
+    ImGui_ImplOpenGL3_Init("#version 330 core");
     try {
         const auto monsterModel = std::make_shared<Model>(
             loadModelFromFile(getAssetFullPath("obj/Monster.obj"), false));
@@ -450,8 +482,125 @@ MazeApp::MazeApp(const Options& options)
     }
 }
 
-MazeApp::~MazeApp() {}
+MazeApp::~MazeApp() {
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+}
 
+void MazeApp::updateSun(float currentTime) {
+    if (_lastSunUpdate <= 0.0f) _lastSunUpdate = currentTime;
+
+    float dt = currentTime - _lastSunUpdate;
+    _lastSunUpdate = currentTime;
+
+    if (_sunAuto) {
+        _timeOfDay += dt * _timeScale / 60.0f;
+    }
+
+    // 归一化时间
+    while (_timeOfDay >= 24.0f) _timeOfDay -= 24.0f;
+    while (_timeOfDay < 0.0f) _timeOfDay += 24.0f;
+
+    float t = _timeOfDay / 24.0f;
+    float azimuth = t * 2.0f * glm::pi<float>();
+    constexpr float maxElev = glm::radians(85.0f); // 更高的最大仰角
+    float raw = sin(t * 2.0f * glm::pi<float>()); // -1..1
+    float curve = pow(raw, 0.9f); // 指数 <1 会让中间更宽，更接近平顶（可调）
+    float elev = glm::sign(raw) * fabs(curve) * maxElev;
+
+    // 计算从场景指向太阳的方向
+    glm::vec3 sunPos;
+    sunPos.x = cos(elev) * cos(azimuth);
+    sunPos.y = sin(elev);
+    sunPos.z = cos(elev) * sin(azimuth);
+
+    // 光照方向：从场景指向光源
+    _sunDirection = glm::normalize(sunPos);
+
+    // 颜色与强度
+    float h = glm::clamp((sunPos.y + 0.1f) / 1.1f, 0.0f, 1.0f);
+    glm::vec3 sunriseColor = glm::vec3(1.0f, 0.45f, 0.2f);
+    glm::vec3 noonColor = glm::vec3(1.0f, 1.0f, 0.95f);
+    _sunColor = glm::mix(sunriseColor, noonColor, h);
+
+    float baseIntensity = glm::mix(0.2f, 1.0f, h);
+    _sunIntensity = pow(baseIntensity, 0.9f) * 2.0f;
+}
+
+void MazeApp::renderUI() {
+    // 每帧开始 ImGui
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    // 主控制面板
+    ImGui::Begin("Lighting & Rendering Control");
+
+    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+
+    ImGui::Separator();
+    ImGui::Text("Time of Day Simulation");
+
+    // 自动/手动切换
+    ImGui::Checkbox("Auto Time", &_sunAuto);
+
+    // 时间滑条（24 小时制）
+    ImGui::SliderFloat("Time (hours)", &_timeOfDay, 0.0f, 24.0f, "%.2f");
+
+    // 时间速度
+    ImGui::SliderFloat("Time Scale (min/sec)", &_timeScale, 1.0f, 360.0f, "%.1f");
+
+    if (ImGui::Button("Reset to Noon")) {
+        _timeOfDay = 12.0f;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset to Midnight")) {
+        _timeOfDay = 0.0f;
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Sun Properties");
+    ImGui::ColorEdit3("Sun Color", glm::value_ptr(_sunColor));
+    ImGui::SliderFloat("Sun Intensity", &_sunIntensity, 0.0f, 5.0f);
+    ImGui::Text("Sun Direction: (%.2f, %.2f, %.2f)", _sunDirection.x, _sunDirection.y, _sunDirection.z);
+
+    ImGui::Separator();
+    ImGui::Text("HDR & Tone Mapping");
+    ImGui::SliderFloat("Exposure", &exposure, 0.01f, 5.0f);
+    ImGui::SliderFloat("Gamma", &gammaVal, 0.5f, 3.0f);
+
+    ImGui::Separator();
+    ImGui::Text("SSAO");
+    ImGui::SliderFloat("SSAO Radius", &ssaoRadius, 0.01f, 2.0f);
+    ImGui::SliderFloat("SSAO Bias", &ssaoBias, 0.0f, 0.1f);
+
+    ImGui::Separator();
+    ImGui::Text("Material & Ambient");
+    ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f);
+    ImGui::ColorEdit3("Specular Color", glm::value_ptr(_materialSpecular));
+    ImGui::SliderFloat("Shininess", &_materialShininess, 1.0f, 256.0f);
+
+    ImGui::Separator();
+    if (ImGui::Button("Reset All to Defaults")) {
+        _timeOfDay = 12.0f;
+        _timeScale = 60.0f;
+        _sunAuto = true;
+        exposure = 1.0f;
+        gammaVal = 2.2f;
+        ssaoRadius = 0.5f;
+        ssaoBias = 0.025f;
+        ambientStrength = 0.1f;
+        _materialSpecular = glm::vec3(0.3f);
+        _materialShininess = 32.0f;
+    }
+
+    ImGui::End();
+
+    // 渲染 ImGui
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
 
 void MazeApp::renderFrame() {
     float currentFrame = static_cast<float>(glfwGetTime());
@@ -459,32 +608,27 @@ void MazeApp::renderFrame() {
     _lastFrameTime = currentFrame;
 
     updateCamera(deltaTime);
+    updateSun(currentFrame);
 
     showFpsInWindowTitle();
 
+    // 格式化时间 hh:mm
+    int hour = static_cast<int>(floor(_timeOfDay)) % 24;
+    int minute = static_cast<int>(floor((_timeOfDay - floor(_timeOfDay)) * 60.0f));
     std::ostringstream title;
-    title << "Maze | FPS: " << static_cast<int>(1.0f / deltaTime)
-        << " | Light(" << std::fixed << std::setprecision(1)
-        << _lightPos.x << "," << _lightPos.y << "," << _lightPos.z << ")"
-        << " | Intensity:" << _lightIntensity
-        << " | Exposure:" << exposure
-        << " | SSAO:" << ssaoRadius
-        << " | Ambient:" << ambientStrength;
+    title << "Maze | Time: " << std::setfill('0') << std::setw(2) << hour << ":" << std::setw(2) << minute
+        << (_sunAuto ? " [Auto]" : " [Manual]");
     glfwSetWindowTitle(_window, title.str().c_str());
-
-
 
     glClearColor(_clearColor.r, _clearColor.g, _clearColor.b, _clearColor.a);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     const glm::mat4 view = _camera.getViewMatrix();
     const glm::mat4 proj = _camera.getProjectionMatrix();
-    const glm::vec3 lightDir = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.2f));
 
     _shader->use();
     _shader->setUniformMat4("uView", view);
     _shader->setUniformMat4("uProj", proj);
-    _shader->setUniformVec3("uLightDir", lightDir);
     _shader->setUniformInt("uDiffuse", 0);
 
 
@@ -541,14 +685,24 @@ void MazeApp::renderFrame() {
     glBindFramebuffer(GL_FRAMEBUFFER, ssaoFBO);
     glClear(GL_COLOR_BUFFER_BIT);
     _ssaoShader->use();
-    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, gPosition); _ssaoShader->setUniformInt("gPosition", 0);
-    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, gNormal);   _ssaoShader->setUniformInt("gNormal", 1);
-    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, noiseTexture); _ssaoShader->setUniformInt("texNoise", 2);
-    _ssaoShader->setUniformMat4("projection", projection);
+    _ssaoShader->setUniformMat4("projection", proj);
     _ssaoShader->setUniformFloat("radius", ssaoRadius);
     _ssaoShader->setUniformFloat("bias", ssaoBias);
-    _ssaoShader->setUniformVec2("noiseScale", glm::vec2((float)_windowWidth / 4.0f, (float)_windowHeight / 4.0f));
-    // render quad
+    _ssaoShader->setUniformVec2("noiseScale",
+        glm::vec2((float)_windowWidth / 4.0f, (float)_windowHeight / 4.0f));
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gPosition);
+    _ssaoShader->setUniformInt("gPosition", 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, gNormal);
+    _ssaoShader->setUniformInt("gNormal", 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, noiseTexture);
+    _ssaoShader->setUniformInt("texNoise", 2);
+
     glBindVertexArray(quadVAO);
     glDisable(GL_DEPTH_TEST);
     glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -559,26 +713,50 @@ void MazeApp::renderFrame() {
     glBindFramebuffer(GL_FRAMEBUFFER, ssaoBlurFBO);
     glClear(GL_COLOR_BUFFER_BIT);
     _ssaoBlurShader->use();
-    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, ssaoColorBuffer); _ssaoBlurShader->setUniformInt("ssaoInput", 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, ssaoColorBuffer);
+    _ssaoBlurShader->setUniformInt("ssaoInput", 0);
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    // 4. Lighting pass (render to HDR buffer)
+
+    // 调试输出（可选）
+    static int frameCount = 0;
+    if (frameCount++ % 60 == 0) { // 每秒输出一次
+        std::cout << "Sun - Dir: (" << _sunDirection.x << ", "
+            << _sunDirection.y << ", " << _sunDirection.z
+            << ") Color: (" << _sunColor.r << ", " << _sunColor.g << ", " << _sunColor.b
+            << ") Intensity: " << _sunIntensity << std::endl;
+    }
+    // 4. Lighting pass 使用动态太阳光
     glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     _lightingShader->use();
-    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, gPosition); _lightingShader->setUniformInt("gPosition", 0);
-    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, gNormal);   _lightingShader->setUniformInt("gNormal", 1);
-    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, gAlbedo);   _lightingShader->setUniformInt("gAlbedo", 2);
-    glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, ssaoColorBufferBlur); _lightingShader->setUniformInt("ssao", 3);
 
+    //设置太阳光（平行光）
+    _lightingShader->setUniformInt("lightType", 1); // 1 = directional
+    _lightingShader->setUniformVec3("lightDir", _sunDirection);
+    _lightingShader->setUniformVec3("lightColor", _sunColor * _sunIntensity);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gPosition);
+    _lightingShader->setUniformInt("gPosition", 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, gNormal);
+    _lightingShader->setUniformInt("gNormal", 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, gAlbedo);
+    _lightingShader->setUniformInt("gAlbedo", 2);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, ssaoColorBufferBlur);
+    _lightingShader->setUniformInt("ssao", 3);
 
     _lightingShader->setUniformVec3("viewPos", _camera.transform.position);
-    _lightingShader->setUniformVec3("lightPos", _lightPos);
-    //光源颜色 * 强度
-    _lightingShader->setUniformVec3("lightColor", _lightColor * _lightIntensity);
     _lightingShader->setUniformFloat("ambientStrength", ambientStrength);
     _lightingShader->setUniformVec3("materialSpecular", _materialSpecular);
     _lightingShader->setUniformFloat("materialShininess", _materialShininess);
@@ -587,6 +765,7 @@ void MazeApp::renderFrame() {
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 
     // 5. HDR Tonemap + Gamma to default framebuffer
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -598,22 +777,22 @@ void MazeApp::renderFrame() {
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 
-
+    renderUI();
 }
 
 void MazeApp::handleInput() {
-    //1️⃣ 每一帧轮询键盘状态（关键！）
+    //每一帧轮询键盘状态（关键！）
     for (int i = 0; i <= GLFW_KEY_LAST; ++i) {
         _input.keyboard.keyStates[i] = glfwGetKey(_window, i);
     }
 
-    //2️⃣ ESC 退出
+    //ESC 退出
     if (_input.keyboard.keyStates[GLFW_KEY_ESCAPE] == GLFW_PRESS) {
         glfwSetWindowShouldClose(_window, true);
         return;
     }
 
-    //3️⃣ 窗口 resize 后更新相机 aspect
+    //窗口 resize 后更新相机 aspect
     if (_windowReized) {
         _camera.aspect =
             static_cast<float>(_windowWidth) / static_cast<float>(_windowHeight);
@@ -622,71 +801,59 @@ void MazeApp::handleInput() {
 
     float deltaTime = static_cast<float>(glfwGetTime()) - _lastFrameTime;
 
-    // 光源位置调节（小键盘或方向键）
-    if (_input.keyboard.keyStates[GLFW_KEY_KP_4] == GLFW_PRESS) { // 左
-        _lightPos.x -= _lightMoveSpeed * deltaTime;
-    }
-    if (_input.keyboard.keyStates[GLFW_KEY_KP_6] == GLFW_PRESS) { // 右
-        _lightPos.x += _lightMoveSpeed * deltaTime;
-    }
-    if (_input.keyboard.keyStates[GLFW_KEY_KP_8] == GLFW_PRESS) { // 前
-        _lightPos.z -= _lightMoveSpeed * deltaTime;
-    }
-    if (_input.keyboard.keyStates[GLFW_KEY_KP_2] == GLFW_PRESS) { // 后
-        _lightPos.z += _lightMoveSpeed * deltaTime;
-    }
-    if (_input.keyboard.keyStates[GLFW_KEY_KP_7] == GLFW_PRESS) { // 上
-        _lightPos.y += _lightMoveSpeed * deltaTime;
-    }
-    if (_input.keyboard.keyStates[GLFW_KEY_KP_9] == GLFW_PRESS) { // 下
-        _lightPos.y -= _lightMoveSpeed * deltaTime;
-    }
+    auto safeKeyPress = [&](int key) -> bool {
+        if (key < 0 || key > GLFW_KEY_LAST) return false;
+        return _input.keyboard.keyStates[key] == GLFW_PRESS && !_keyPressed[key];
+        };
 
-    // 光照强度（1/2 键）
-    if (_input.keyboard.keyStates[GLFW_KEY_1] == GLFW_PRESS && !_keyPressed[GLFW_KEY_1]) {
-        _lightIntensity = glm::max(0.1f, _lightIntensity - 0.1f);
-        _keyPressed[GLFW_KEY_1] = true;
-    }
-    if (_input.keyboard.keyStates[GLFW_KEY_2] == GLFW_PRESS && !_keyPressed[GLFW_KEY_2]) {
-        _lightIntensity += 0.1f;
-        _keyPressed[GLFW_KEY_2] = true;
-    }
+    auto safeKeyRelease = [&](int key) -> bool {
+        if (key < 0 || key > GLFW_KEY_LAST) return false;
+        return _input.keyboard.keyStates[key] == GLFW_RELEASE;
+        };
 
-    // 曝光（3/4 键）
-    if (_input.keyboard.keyStates[GLFW_KEY_3] == GLFW_PRESS && !_keyPressed[GLFW_KEY_3]) {
-        exposure = glm::max(0.1f, exposure - 0.1f);
-        _keyPressed[GLFW_KEY_3] = true;
+    // 切换自动/手动
+    if (safeKeyPress(GLFW_KEY_T)) {
+        _sunAuto = !_sunAuto;
+        _keyPressed[GLFW_KEY_T] = true;
     }
-    if (_input.keyboard.keyStates[GLFW_KEY_4] == GLFW_PRESS && !_keyPressed[GLFW_KEY_4]) {
-        exposure += 0.1f;
-        _keyPressed[GLFW_KEY_4] = true;
-    }
+    if (safeKeyRelease(GLFW_KEY_T)) _keyPressed[GLFW_KEY_T] = false;
 
-    // SSAO 半径（5/6 键）
-    if (_input.keyboard.keyStates[GLFW_KEY_5] == GLFW_PRESS && !_keyPressed[GLFW_KEY_5]) {
-        ssaoRadius = glm::max(0.1f, ssaoRadius - 0.05f);
-        _keyPressed[GLFW_KEY_5] = true;
-    }
-    if (_input.keyboard.keyStates[GLFW_KEY_6] == GLFW_PRESS && !_keyPressed[GLFW_KEY_6]) {
-        ssaoRadius += 0.05f;
-        _keyPressed[GLFW_KEY_6] = true;
-    }
-
-    // 环境光强度（7/8 键）
-    if (_input.keyboard.keyStates[GLFW_KEY_7] == GLFW_PRESS && !_keyPressed[GLFW_KEY_7]) {
-        ambientStrength = glm::max(0.0f, ambientStrength - 0.05f);
-        _keyPressed[GLFW_KEY_7] = true;
-    }
-    if (_input.keyboard.keyStates[GLFW_KEY_8] == GLFW_PRESS && !_keyPressed[GLFW_KEY_8]) {
-        ambientStrength = glm::min(1.0f, ambientStrength + 0.05f);
-        _keyPressed[GLFW_KEY_8] = true;
-    }
-
-    //重置所有按键状态（释放时）
-    for (int key : {GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4,
-        GLFW_KEY_5, GLFW_KEY_6, GLFW_KEY_7, GLFW_KEY_8}) {
-        if (_input.keyboard.keyStates[key] == GLFW_RELEASE) {
-            _keyPressed[key] = false;
+    // 手动时间调整
+    if (!_sunAuto) {
+        if (safeKeyPress(GLFW_KEY_PERIOD)) { // '>'
+            _timeOfDay += 1.0f;
+            _keyPressed[GLFW_KEY_PERIOD] = true;
         }
+        if (safeKeyPress(GLFW_KEY_COMMA)) { // '<'
+            _timeOfDay -= 1.0f;
+            _keyPressed[GLFW_KEY_COMMA] = true;
+        }
+        if (safeKeyRelease(GLFW_KEY_PERIOD)) _keyPressed[GLFW_KEY_PERIOD] = false;
+        if (safeKeyRelease(GLFW_KEY_COMMA)) _keyPressed[GLFW_KEY_COMMA] = false;
+
+        if (_input.keyboard.keyStates[GLFW_KEY_PAGE_UP] == GLFW_PRESS) {
+            _timeOfDay += 0.1f;
+        }
+        if (_input.keyboard.keyStates[GLFW_KEY_PAGE_DOWN] == GLFW_PRESS) {
+            _timeOfDay -= 0.1f;
+        }
+
+        // 归一化
+        if (_timeOfDay >= 24.0f) _timeOfDay = fmod(_timeOfDay, 24.0f);
+        if (_timeOfDay < 0.0f) _timeOfDay = fmod(_timeOfDay, 24.0f) + 24.0f;
     }
+
+    // timeScale 调整
+    if (safeKeyPress(GLFW_KEY_U)) {
+        _timeScale *= 2.0f;
+        if (_timeScale > 3600.0f) _timeScale = 3600.0f;
+        _keyPressed[GLFW_KEY_U] = true;
+    }
+    if (safeKeyPress(GLFW_KEY_J)) {
+        _timeScale *= 0.5f;
+        if (_timeScale < 1.0f) _timeScale = 1.0f;
+        _keyPressed[GLFW_KEY_J] = true;
+    }
+    if (safeKeyRelease(GLFW_KEY_U)) _keyPressed[GLFW_KEY_U] = false;
+    if (safeKeyRelease(GLFW_KEY_J)) _keyPressed[GLFW_KEY_J] = false;
 }
