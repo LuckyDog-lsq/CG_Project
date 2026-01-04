@@ -5,6 +5,35 @@
 #include <string>
 #include <vector>
 
+const std::string lighteningVsRelPath = "lightening.vert";
+const std::string lighteningFsRelPath = "lightening.frag";
+
+void MazeApp::initResources() {
+    _gBufferShader = std::make_unique<GLSLProgram>();
+    _gBufferShader->attachVertexShaderFromFile("shaders/gbuffer.vert");
+    _gBufferShader->attachFragmentShaderFromFile("shaders/gbuffer.frag");
+    _gBufferShader->link();
+
+    _ssaoShader = std::make_unique<GLSLProgram>();
+    _ssaoShader->attachVertexShaderFromFile("shaders/quad.vert");
+    _ssaoShader->attachFragmentShaderFromFile("shaders/ssao.frag");
+    _ssaoShader->link();
+
+    _ssaoBlurShader = std::make_unique<GLSLProgram>();
+    _ssaoBlurShader->attachVertexShaderFromFile("shaders/quad.vert");
+    _ssaoBlurShader->attachFragmentShaderFromFile("shaders/ssao_blur.frag");
+    _ssaoBlurShader->link();
+
+    _lightingShader = std::make_unique<GLSLProgram>();
+    _lightingShader->attachVertexShaderFromFile("shaders/quad.vert");
+    _lightingShader->attachFragmentShaderFromFile("shaders/lighting.frag");
+    _lightingShader->link();
+
+    _hdrShader = std::make_unique<GLSLProgram>();
+    _hdrShader->attachVertexShaderFromFile("shaders/quad.vert");
+    _hdrShader->attachFragmentShaderFromFile("shaders/hdr_quad.frag");
+    _hdrShader->link();
+}
 void MazeApp::updateCamera(float deltaTime) {
     // 1️⃣ 获取鼠标当前位置
     double xpos, ypos;
@@ -131,6 +160,11 @@ MazeApp::MazeApp(const Options& options)
     _shader->attachVertexShader(vsCode);
     _shader->attachFragmentShader(fsCode);
     _shader->link();
+
+    _phongShader.reset(new GLSLProgram());
+    _phongShader->attachVertexShaderFromFile(getAssetFullPath(lighteningVsRelPath));
+    _phongShader->attachFragmentShaderFromFile(getAssetFullPath(lighteningFsRelPath));
+    _phongShader->link();
 
     try {
         const auto monsterModel = std::make_shared<Model>(
@@ -277,6 +311,23 @@ void MazeApp::renderFrame() {
     _shader->setUniformMat4("uProj", proj);
     _shader->setUniformVec3("uLightDir", lightDir);
     _shader->setUniformInt("uDiffuse", 0);
+    _phongShader->use();
+
+    // camera matrices
+    glm::mat4 view = _camera.getViewMatrix();
+    glm::mat4 projection = _camera.getProjectionMatrix();
+
+    _phongShader->setUniformMat4("uView", view);
+    _phongShader->setUniformMat4("uProj", projection);
+    _phongShader->setUniformVec3("viewPos", _camera.); // 根据你的 Camera API
+
+    // light uniforms
+    _phongShader->setUniform("lightPos", _lightPos);
+    _phongShader->setUniform("lightColor", _lightColor);
+
+    // global material defaults (each model can override)
+    _phongShader->setUniform("materialShininess", _materialShininess);
+
 
     for (const auto& sceneModel : _sceneModels) {
         if (!sceneModel.model) {
